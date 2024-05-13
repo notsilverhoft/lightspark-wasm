@@ -124,7 +124,8 @@ enum GLNVGshaderType {
 	NSVG_SHADER_FILLGRAD,
 	NSVG_SHADER_FILLIMG,
 	NSVG_SHADER_SIMPLE,
-	NSVG_SHADER_IMG
+	NSVG_SHADER_IMG,
+	NSVG_SHADER_FILLGRADIMG
 };
 
 #if NANOVG_GL_USE_UNIFORMBUFFER
@@ -202,10 +203,11 @@ struct GLNVGfragUniforms {
 		float strokeThr;
 		int texType;
 		int type;
+		int spreadMode;
 	#else
 		// note: after modifying layout or size of uniform array,
 		// don't forget to also update the fragment shader source!
-		#define NANOVG_GL_UNIFORMARRAY_SIZE 11
+		#define NANOVG_GL_UNIFORMARRAY_SIZE 12
 		union {
 			struct {
 				float scissorMat[12]; // matrices are actually 3 vec4s
@@ -221,6 +223,7 @@ struct GLNVGfragUniforms {
 				float strokeThr;
 				float texType;
 				float type;
+				float spreadMode;
 			};
 			float uniformArray[NANOVG_GL_UNIFORMARRAY_SIZE][4];
 		};
@@ -528,7 +531,7 @@ static int glnvg__renderCreate(void* uptr)
 #if NANOVG_GL_USE_UNIFORMBUFFER
 	"#define USE_UNIFORMBUFFER 1\n"
 #else
-	"#define UNIFORMARRAY_SIZE 11\n"
+	"#define UNIFORMARRAY_SIZE 12\n"
 #endif
 	"\n";
 
@@ -576,6 +579,7 @@ static int glnvg__renderCreate(void* uptr)
 		"		float strokeThr;\n"
 		"		int texType;\n"
 		"		int type;\n"
+		"		int spreadMode;\n"
 		"	};\n"
 		"#else\n" // NANOVG_GL3 && !USE_UNIFORMBUFFER
 		"	uniform vec4 frag[UNIFORMARRAY_SIZE];\n"
@@ -604,7 +608,25 @@ static int glnvg__renderCreate(void* uptr)
 		"	#define strokeThr frag[10].y\n"
 		"	#define texType int(frag[10].z)\n"
 		"	#define type int(frag[10].w)\n"
+		"	#define spreadMode int(frag[11].x)\n"
 		"#endif\n"
+		"\n"
+		"float applySpread(float d) {\n"
+		"	if (spreadMode == 0) // Pad\n"
+		"		return clamp(d, 0.0, 1.0);\n"
+		"	else if (spreadMode == 1) // Repeat\n"
+		"		return fract(d);\n"
+		"	else if (spreadMode == 2) { // Reflect\n"
+		"		#ifdef NANOVG_GL3\n"
+		"		bool even = !bool(int(d) & 1);\n"
+		"		#else\n" // !NANOVG_GL3
+		"		bool even = !bool(mod(d, 2.0));\n"
+		"		#endif\n"
+		"		d = abs(d);\n"
+		"		return (even) ? fract(d) : 1.0 - fract(d);\n"
+		"	}\n"
+		"	return d;\n"
+		"}\n"
 		"\n"
 		"float sdroundrect(vec2 pt, vec2 ext, float rad) {\n"
 		"	vec2 ext2 = ext - vec2(rad,rad);\n"
@@ -637,7 +659,7 @@ static int glnvg__renderCreate(void* uptr)
 		"	if (type == 0) {			// Gradient\n"
 		"		// Calculate gradient color using box gradient\n"
 		"		vec2 pt = (paintMat * vec3(fpos,1.0)).xy;\n"
-		"		float d = clamp((sdroundrect(pt, extent, radius) + feather*0.5) / feather, 0.0, 1.0);\n"
+		"		float d = applySpread((sdroundrect(pt, extent, radius) + feather*0.5) / feather);\n"
 		"		vec4 color = mix(innerCol,outerCol,d);\n"
 		"		// Combine alpha\n"
 		"		color *= strokeAlpha * scissor;\n"
@@ -669,6 +691,19 @@ static int glnvg__renderCreate(void* uptr)
 		"		if (texType == 2) color = vec4(color.x);"
 		"		color *= scissor;\n"
 		"		result = color * innerCol;\n"
+		"	} else if (type == 4) {		// Image based gradient; Sample a texture using the gradient position.\n"
+		"		// Calculate gradient color using box gradient\n"
+		"		vec2 pt = (paintMat * vec3(fpos,1.0)).xy;\n"
+		"		float d = (sdroundrect(pt, extent, radius) + feather*0.5) / feather;\n"
+		"#ifdef NANOVG_GL3\n"
+		"		vec4 color = texture(tex, vec2(d, 0.0));\n"
+		"#else\n"
+		"		vec4 color = texture2D(tex, vec2(d, 0.0));\n"
+		"#endif\n"
+
+		"		// Combine alpha\n"
+		"		color *= strokeAlpha * scissor;\n"
+		"		result = color;\n"
 		"	}\n"
 		"#ifdef NANOVG_GL3\n"
 		"	outColor = result;\n"
@@ -729,6 +764,11 @@ static int glnvg__renderCreateTexture(void* uptr, int type, int w, int h, int im
 		if ((imageFlags & NVG_IMAGE_REPEATX) != 0 || (imageFlags & NVG_IMAGE_REPEATY) != 0) {
 			printf("Repeat X/Y is not supported for non power-of-two textures (%d x %d)\n", w, h);
 			imageFlags &= ~(NVG_IMAGE_REPEATX | NVG_IMAGE_REPEATY);
+		}
+		// No mirror
+		if ((imageFlags & NVG_IMAGE_MIRRORX) != 0 || (imageFlags & NVG_IMAGE_MIRRORY) != 0) {
+			printf("Mirror X/Y is not supported for non power-of-two textures (%d x %d)\n", w, h);
+			imageFlags &= ~(NVG_IMAGE_MIRRORX | NVG_IMAGE_MIRRORY);
 		}
 		// No mips.
 		if (imageFlags & NVG_IMAGE_GENERATE_MIPMAPS) {
@@ -793,11 +833,15 @@ static int glnvg__renderCreateTexture(void* uptr, int type, int w, int h, int im
 
 	if (imageFlags & NVG_IMAGE_REPEATX)
 		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
+	else if (imageFlags & NVG_IMAGE_MIRRORX)
+		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_MIRRORED_REPEAT);
 	else
 		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
 
 	if (imageFlags & NVG_IMAGE_REPEATY)
 		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
+	else if (imageFlags & NVG_IMAGE_MIRRORY)
+		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_MIRRORED_REPEAT);
 	else
 		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
 
@@ -952,24 +996,32 @@ static int glnvg__convertPaint(GLNVGcontext* gl, GLNVGfragUniforms* frag, NVGpai
 		} else {
 			nvgTransformInverse(invxform, paint->xform);
 		}
-		frag->type = NSVG_SHADER_FILLIMG;
+		if (paint->isGradient == 0) {
+			frag->type = NSVG_SHADER_FILLIMG;
 
-		#if NANOVG_GL_USE_UNIFORMBUFFER
-		if (tex->type == NVG_TEXTURE_RGBA)
-			frag->texType = (tex->flags & NVG_IMAGE_PREMULTIPLIED) ? 0 : 1;
-		else
-			frag->texType = 2;
-		#else
-		if (tex->type == NVG_TEXTURE_RGBA)
-			frag->texType = (tex->flags & NVG_IMAGE_PREMULTIPLIED) ? 0.0f : 1.0f;
-		else
-			frag->texType = 2.0f;
-		#endif
+			#if NANOVG_GL_USE_UNIFORMBUFFER
+			if (tex->type == NVG_TEXTURE_RGBA)
+				frag->texType = (tex->flags & NVG_IMAGE_PREMULTIPLIED) ? 0 : 1;
+			else
+				frag->texType = 2;
+			#else
+			if (tex->type == NVG_TEXTURE_RGBA)
+				frag->texType = (tex->flags & NVG_IMAGE_PREMULTIPLIED) ? 0.0f : 1.0f;
+			else
+				frag->texType = 2.0f;
+			#endif
+		} else {
+			frag->type = NSVG_SHADER_FILLGRADIMG;
+			frag->radius = paint->radius;
+			frag->feather = paint->feather;
+			frag->spreadMode = paint->spreadMode;
+		}
 //		printf("frag->texType = %d\n", frag->texType);
 	} else {
 		frag->type = NSVG_SHADER_FILLGRAD;
 		frag->radius = paint->radius;
 		frag->feather = paint->feather;
+		frag->spreadMode = paint->spreadMode;
 		nvgTransformInverse(invxform, paint->xform);
 	}
 
@@ -1239,6 +1291,7 @@ static void glnvg__renderFlush(void* uptr)
 		for (i = 0; i < gl->ncalls; i++) {
 			GLNVGcall* call = &gl->calls[i];
 			glnvg__blendFuncSeparate(gl,&call->blendFunc);
+			GLNVGfragUniforms* frag = nvg__fragUniformPtr(gl, call->uniformOffset);
 			if (call->type == GLNVG_FILL)
 				glnvg__fill(gl, call);
 			else if (call->type == GLNVG_CONVEXFILL)
@@ -1247,6 +1300,8 @@ static void glnvg__renderFlush(void* uptr)
 				glnvg__stroke(gl, call);
 			else if (call->type == GLNVG_TRIANGLES)
 				glnvg__triangles(gl, call);
+			if (frag->type == NSVG_SHADER_FILLGRADIMG)
+				glnvg__deleteTexture(gl, call->image);
 		}
 
 		glDisableVertexAttribArray(0);

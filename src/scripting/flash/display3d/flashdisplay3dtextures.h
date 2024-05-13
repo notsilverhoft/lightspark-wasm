@@ -42,9 +42,12 @@ protected:
 	vector<vector<uint8_t>> bitmaparray;
 	Context3D* context;
 	void fillFromDXT1(bool hasrgbdata, uint32_t level, uint32_t w, uint32_t h, std::vector<uint8_t>& rgbdata, std::vector<uint8_t>& rgbimagedata);
+	void fillFromDXT5(bool hasalphadata, bool hasrgbdata, uint32_t level, uint32_t w, uint32_t h, std::vector<uint8_t>& alphadata, std::vector<uint8_t>& alphaimagedata, std::vector<uint8_t>& rgbdata, std::vector<uint8_t>& rgbimagedata);
 	void parseAdobeTextureFormat(ByteArray* data, int32_t byteArrayOffset, bool forCubeTexture);
 	void setFormat(const tiny_string& f);
 	uint32_t getBytesNeeded(uint32_t miplevel);
+	void uploadFromBitmapDataIntern(BitmapData* source, uint32_t miplevel, uint32_t side=0, uint32_t max_miplevel=0);
+	void uploadFromByteArrayIntern(ByteArray* source, uint32_t offset, uint32_t miplevel);
 public:
 	TextureBase(ASWorker* wrk,Class_base* c):EventDispatcher(wrk,c)
 	  ,textureID(UINT32_MAX),width(0),height(0),async(false),format(BGRA),compressedformat(UNCOMPRESSED),context(nullptr)
@@ -53,6 +56,7 @@ public:
 	  ,textureID(UINT32_MAX),width(0),height(0),format(BGRA),compressedformat(UNCOMPRESSED),context(_context)
 	{ subtype = SUBTYPE_TEXTUREBASE;}
 	static void sinit(Class_base* c);
+	bool destruct() override;
 	ASFUNCTION_ATOM(dispose);
 };
 
