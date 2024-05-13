@@ -1,3 +1,7 @@
+This is a work in progress, I am working on a dependency script, as they all must be local, and I will start a pre-release soon.
+
+
+
 Lightspark
 ==========
 
