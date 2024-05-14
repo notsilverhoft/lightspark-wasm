@@ -1,5 +1,18 @@
-This is a work in progress, I am working on a dependency script, as they all must be local, and I will start a pre-release soon.
+If you are looking for Lightspark, go to https://github.com/lightspark/lightspark.
 
+This is a work in progress... I have successfully outputted WASM from Lightspark, and now I am trying to make the testing process easier. I will occasionally commit my progress, feel free to open an issue with any questions you might have.
+
+This is my current checklist(Also a work in progress... lol):
+
+- [ ] Finish this checklist...
+- [ ] Installing Emsdk in Dependencies
+- [ ] Dependencies:
+  - [ ] Lzma
+  - [ ] Cairo
+  - [ ] Pango
+  - [ ] PangoCairo
+  - [ ] FFmpeg
+- [ ] Gnash
 
 
 Lightspark
@@ -10,7 +23,7 @@ Lightspark
 [![Github Actions Status](https://img.shields.io/github/actions/workflow/status/lightspark/lightspark/build.yml?branch=master)](https://github.com/lightspark/lightspark/actions)
 [![Matrix](https://img.shields.io/matrix/lightspark%3Ab0nk.xyz?logo=matrix)](https://matrix.to/#/%23lightspark%3Ab0nk.xyz)
 
-Lightspark is an open source Flash player implementation for playing files in the SWF format. Lightspark can run as a web browser plugin or as a standalone application.
+Lightspark is an open-source Flash player implementation for playing files in the SWF format. Lightspark can run as a web browser plugin or as a standalone application.
 
 Lightspark supports SWF files written on all versions of the ActionScript language.
 
