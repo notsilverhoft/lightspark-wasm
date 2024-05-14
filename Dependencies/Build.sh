@@ -57,6 +57,7 @@ echo $working_dir
     fi
 
 
+
 #Building:
 
     #Lzma:
@@ -87,7 +88,7 @@ echo $working_dir
     mkdir pango-cairo-wasm
     cd $working_dir
     cp -r  $working_dir/pango-cairo-wasm/build $working_dir/PKGCONFIG/pango-cairo-wasm/build
-    pango-cairo-wasm_dir=$working_dir/PKGCONFIG/pango-cairo-wasm/build/lib/pkgconfig
-#Setting PKG_CONFIG_PATH
+    pango_cairo_wasm_dir=$working_dir/PKGCONFIG/pango-cairo-wasm/build/lib/pkgconfig
 
-export PKG_CONFIG_PATH=$lzma_dir:$pango-cairo-wasm_dir
+#Setting PKG_CONFIG_PATH:
+    PKG_CONFIG_PATH=$lzma_dir:$pango_cairo_wasm_dir
