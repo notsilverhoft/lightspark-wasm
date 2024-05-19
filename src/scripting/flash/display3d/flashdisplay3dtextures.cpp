@@ -234,12 +234,14 @@ void TextureBase::fillFromDXT1(bool hasrgbdata, uint32_t level, uint32_t w, uint
 			bitmaparray[level][pos++]=rgbdata[j*4+3];
 		}
 	}
-	else
+	else if (rgbimagedata.empty() || rgbdata.empty())
 		bitmaparray[level].clear();
+	else
+		bitmaparray[level].resize(8);
 }
 void TextureBase::fillFromDXT5(bool hasalphadata, bool hasrgbdata, uint32_t level, uint32_t w, uint32_t h, std::vector<uint8_t>& alphadata, std::vector<uint8_t>& alphaimagedata, std::vector<uint8_t>& rgbdata, std::vector<uint8_t>& rgbimagedata)
 {
-	if (hasalphadata && hasrgbdata  && w*h>=16)
+	if (hasalphadata && hasrgbdata && w*h>=16)
 	{
 		bitmaparray[level].resize(w*h);
 		uint32_t pos = 0;
@@ -266,8 +268,10 @@ void TextureBase::fillFromDXT5(bool hasalphadata, bool hasrgbdata, uint32_t leve
 			bitmaparray[level][pos++]=rgbdata[j*4+3];
 		}
 	}
-	else
+	else if (rgbimagedata.empty() || rgbdata.empty())
 		bitmaparray[level].clear();
+	else
+		bitmaparray[level].resize(16);
 }
 void TextureBase::parseAdobeTextureFormat(ByteArray *data, int32_t byteArrayOffset, bool forCubeTexture)
 {
@@ -567,7 +571,7 @@ void TextureBase::parseAdobeTextureFormat(ByteArray *data, int32_t byteArrayOffs
 				if (hasrgbdata)
 					decodejxr(data->getBufferNoCheck()+data->getPosition(),tmp,rgbimagedata,max(uint32_t(1),tmpwidth/4),max(uint32_t(2),tmpheight/2),DXT5ImageData,2);
 				data->setPosition(data->getPosition()+tmp);
-
+				
 				fillFromDXT5(hasalphadata,hasrgbdata,level,tmpwidth,tmpheight,alphadata,alphaimagedata,rgbdata,rgbimagedata);
 
 				//skip all other formats

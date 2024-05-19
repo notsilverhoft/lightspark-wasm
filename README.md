@@ -4,17 +4,17 @@ This is a work in progress... I have successfully outputted WASM from Lightspark
 
 This is my current checklist(Also a work in progress... lol):
 
-- [ ] Finish this checklist...
+- [X] Finish this checklist...
 - [X] Installing Emsdk in Dependencies
 - [ ] Dependencies:
   - [X] Lzma
   - [X] Cairo
   - [X] Pango
   - [X] PangoCairo
-  - [ ] OpenGL
-  - [ ] FFmpeg
-  - [ ] Glib
-  - [ ] SDL2
+  - [X] OpenGL
+  - [X] FFmpeg
+  - [X] Glib
+  - [X] SDL2
   - [ ] Curl
   - [ ] Librtmp
 - [ ] Gnash
