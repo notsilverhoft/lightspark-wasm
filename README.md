@@ -17,7 +17,6 @@ This is my current checklist(Also a work in progress... lol):
   - [X] SDL2
   - [ ] Curl
   - [ ] Librtmp
-- [ ] Gnash
 
 
 Lightspark
