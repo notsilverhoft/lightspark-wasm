@@ -79,6 +79,9 @@
 #include "scripting/abc.h"
 #include "backends/rendering.h"
 #include "parsing/tags.h"
+#include "scripting/toplevel/ASQName.h"
+#include "scripting/toplevel/Global.h"
+#include "scripting/toplevel/Namespace.h"
 #include "scripting/toplevel/Number.h"
 #include "scripting/toplevel/Integer.h"
 #include "scripting/toplevel/UInteger.h"
@@ -592,7 +595,7 @@ ABCContext::ABCContext(RootMovieClip* r, istream& in, ABCVm* vm):scriptsdeclared
 	constantAtoms_namespaces.resize(constant_pool.namespaces.size());
 	for (uint32_t i = 0; i < constant_pool.namespaces.size(); i++)
 	{
-		Namespace* res = Class<Namespace>::getInstanceS(root->getInstanceWorker(),getString(constant_pool.namespaces[i].name),BUILTIN_STRINGS::EMPTY,(NS_KIND)(int)constant_pool.namespaces[i].kind);
+		Namespace* res = Class<Namespace>::getInstanceS(root->getInstanceWorker(),getString(constant_pool.namespaces[i].name),BUILTIN_STRINGS::EMPTY,(NS_KIND)(int)constant_pool.namespaces[i].kind,true);
 		if (constant_pool.namespaces[i].kind != 0)
 			res->nskind =(NS_KIND)(int)(constant_pool.namespaces[i].kind);
 		res->setRefConstant();
