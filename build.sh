@@ -3,4 +3,5 @@
 #Dependecies:
 	cd Dependencies
 	. ./Build.sh
+	cd ../
 

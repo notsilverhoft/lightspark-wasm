@@ -3,6 +3,14 @@
 #Autopoint check(Debian only):
     if ! dpkg-query -W -f='${Status}' autopoint > /dev/null 2>&1 | grep "ok installed"; then sudo apt install autopoint; fi
 
+
+sudo apt update
+sudo apt upgrade automake -y
+sudo apt install python3-pip -y
+sudo apt install m4
+python3 -m pip install --upgrade pip
+pip3 install meson==1.4.0
+
 #Autoconf check
     if dpkg-query -W -f='${Status}' autoconf > /dev/null 2>&1 | grep "ok installed"; then sudo apt remove autoconf && wget http://ftp.us.debian.org/debian/pool/main/a/autoconf/autoconf_2.71-3_all.deb && sudo dpkg -i autoconf_2.71-3_all.deb
     
@@ -11,12 +19,7 @@
     
     fi
     
-sudo apt update
-sudo apt upgrade automake -y
-sudo apt install python3-pip -y
-sudo apt install libffi-dev -y
-sudo pip3 install --upgrade pip
-sudo pip3 install meson==0.57.0
+
 #Setting working directory:
 mkdir PKGCONFIG
 working_dir=$(pwd)
@@ -131,6 +134,8 @@ clear
         --prefix=$working_dir/FFmpeg/build --extra-ldflags='-s TOTAL_MEMORY=33554432'
         emmake make CFLAGS='-pthread -sUSE_SDL=2 -s' CXXFLAGS='-pthread -sUSE_SDL=2'
         emmake make install
+        cd $working_dir/PKGCONFIG
+        mkdir FFmpeg
         cd $working_dir
         cp -r $working_dir/FFmpeg/build $working_dir/PKGCONFIG/FFmpeg/build
         FFmpeg_dir=$working_dir/PKGCONFIG/FFmpeg/build/lib/pkgconfig
