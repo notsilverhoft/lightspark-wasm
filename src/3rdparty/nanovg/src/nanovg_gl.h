@@ -1102,6 +1102,15 @@ static void glnvg__resetVertexBuffer(GLNVGcontext* gl)
 	glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, sizeof(NVGvertex), (const GLvoid*)(0 + 2*sizeof(float)));
 }
 
+static void glnvg__stencilClipCoverage(GLNVGcontext* gl, GLNVGcall* call)
+{
+	glEnable(GL_CULL_FACE);
+	glnvg__stencilFunc(gl, GL_NOTEQUAL, 0x80, 0x7f);
+	glnvg__stencilMask(gl, 0xff);
+	glStencilOp(GL_ZERO, GL_ZERO, GL_REPLACE);
+	glDrawArrays(GL_TRIANGLE_STRIP, call->triangleOffset, call->triangleCount);
+	glnvg__checkError(gl, "drawing clip path stencil");
+}
 
 static void glnvg__stencilClipPaths(GLNVGcontext* gl, GLNVGcall* call)
 {
@@ -1111,26 +1120,39 @@ static void glnvg__stencilClipPaths(GLNVGcontext* gl, GLNVGcall* call)
 	glnvg__stencilFunc(gl, GL_ALWAYS, 0x00, 0xff);
 	glnvg__setUniforms(gl, call->uniformOffset, 0);
 
-	glStencilOpSeparate(GL_FRONT, GL_KEEP, GL_KEEP, GL_INCR_WRAP);
-	glStencilOpSeparate(GL_BACK, GL_KEEP, GL_KEEP, GL_DECR_WRAP);
-	glDisable(GL_CULL_FACE);
 	if (hasClipStack) {
 		NVGclipPath* clip;
-		glnvg__bindClipVertexBuffer(gl);
 		for (clip = gl->clips, i = 0; clip != NULL; clip = clip->next, i++) {
 			GLNVGpath* paths = (GLNVGpath*)clip->paths;
+			glnvg__bindClipVertexBuffer(gl);
 			glnvg__setClipVertexBuffer(gl, clip);
+
+			glDisable(GL_CULL_FACE);
+			glStencilOpSeparate(GL_FRONT, GL_KEEP, GL_KEEP, GL_INCR_WRAP);
+			glStencilOpSeparate(GL_BACK, GL_KEEP, GL_KEEP, GL_DECR_WRAP);
+
+			if (i > 0) {
+				glnvg__stencilMask(gl, 0x7f);
+				glnvg__stencilFunc(gl, GL_EQUAL, 0x80, 0x80);
+			}
+
 			for (j = 0; j < clip->npaths; j++) {
 				if (paths[j].fillCount > 0)
 					glDrawArrays(GL_TRIANGLE_FAN, paths[j].fillOffset, paths[j].fillCount);
 				else if (paths[j].strokeCount > 0)
 					glDrawArrays(GL_TRIANGLE_FAN, paths[j].strokeOffset, paths[j].strokeCount);
 			}
-			glnvg__checkError(gl, "drawing clip path stencil");
+
+			glnvg__resetVertexBuffer(gl);
+			glnvg__stencilClipCoverage(gl, call);
 		}
-		glnvg__resetVertexBuffer(gl);
 	} else {
 		GLNVGpath* paths = &gl->paths[call->clipOffset];
+
+		glDisable(GL_CULL_FACE);
+		glStencilOpSeparate(GL_FRONT, GL_KEEP, GL_KEEP, GL_INCR_WRAP);
+		glStencilOpSeparate(GL_BACK, GL_KEEP, GL_KEEP, GL_DECR_WRAP);
+
 		for (i = 0; i < call->clipCount; i++) {
 			if (paths[i].fillCount > 0)
 				glDrawArrays(GL_TRIANGLE_FAN, paths[i].fillOffset, paths[i].fillCount);
@@ -1138,12 +1160,8 @@ static void glnvg__stencilClipPaths(GLNVGcontext* gl, GLNVGcall* call)
 				glDrawArrays(GL_TRIANGLE_FAN, paths[i].strokeOffset, paths[i].strokeCount);
 		}
 
+		glnvg__stencilClipCoverage(gl, call);
 	}
-	glEnable(GL_CULL_FACE);
-	glnvg__stencilFunc(gl, GL_NOTEQUAL, 0x80, 0x7f);
-	glnvg__stencilMask(gl, 0xff);
-	glStencilOp(GL_ZERO, GL_ZERO, GL_REPLACE);
-	glDrawArrays(GL_TRIANGLE_STRIP, call->triangleOffset, call->triangleCount);
 }
 
 static void glnvg__fill(GLNVGcontext* gl, GLNVGcall* call)
@@ -1155,6 +1173,8 @@ static void glnvg__fill(GLNVGcontext* gl, GLNVGcall* call)
 	int hasClipPaths = (call->clipCount > 0 || hasClipStack);
 
 	if (npaths <= 0) return;
+	for (i = 0; i < npaths && paths[i].fillCount > 0; i++);
+	if (i <= 0) return;
 
 	// Draw shapes
 	glEnable(GL_STENCIL_TEST);
@@ -1195,7 +1215,7 @@ static void glnvg__fill(GLNVGcontext* gl, GLNVGcall* call)
 
 	// Draw fill
 	glnvg__stencilFunc(gl, GL_NOTEQUAL, 0x0, 0x7f);
-	glnvg__stencilMask(gl, 0xff);
+	glnvg__stencilMask(gl, 0x7f);
 	glStencilOp(GL_ZERO, GL_ZERO, GL_ZERO);
 	glDrawArrays(GL_TRIANGLE_STRIP, call->triangleOffset, call->triangleCount);
 
@@ -1211,6 +1231,8 @@ static void glnvg__convexFill(GLNVGcontext* gl, GLNVGcall* call)
 	int hasClipPaths = (call->clipCount > 0 || hasClipStack);
 
 	if (npaths <= 0) return;
+	for (i = 0; i < npaths && paths[i].fillCount > 0; i++);
+	if (i <= 0) return;
 
 	if (hasClipPaths != 0) {
 		glEnable(GL_STENCIL_TEST);
@@ -1221,9 +1243,11 @@ static void glnvg__convexFill(GLNVGcontext* gl, GLNVGcall* call)
 		glStencilOp(GL_ZERO, GL_ZERO, GL_ZERO);
 
 		glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
+		glnvg__setUniforms(gl, call->uniformOffset + gl->fragSize, call->image);
+	} else {
+		glnvg__setUniforms(gl, call->uniformOffset, call->image);
 	}
 
-	glnvg__setUniforms(gl, call->uniformOffset, call->image);
 	glnvg__checkError(gl, "convex fill");
 
 	for (i = 0; i < npaths; i++) {
@@ -1246,6 +1270,8 @@ static void glnvg__stroke(GLNVGcontext* gl, GLNVGcall* call)
 	int hasClipPaths = (call->clipCount > 0 || hasClipStack);
 
 	if (npaths <= 0) return;
+	for (i = 0; i < npaths && paths[i].strokeCount > 0; i++);
+	if (i <= 0) return;
 
 	if (hasClipPaths != 0) {
 		glEnable(GL_STENCIL_TEST);
@@ -1256,9 +1282,11 @@ static void glnvg__stroke(GLNVGcontext* gl, GLNVGcall* call)
 		glStencilOp(GL_ZERO, GL_ZERO, GL_ZERO);
 
 		glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
+		glnvg__setUniforms(gl, call->uniformOffset + gl->fragSize, call->image);
+	} else {
+		glnvg__setUniforms(gl, call->uniformOffset, call->image);
 	}
 
-	glnvg__setUniforms(gl, call->uniformOffset, call->image);
 	glnvg__checkError(gl, "stroke fill");
 	// Draw Strokes
 	for (i = 0; i < npaths; i++)
@@ -1587,11 +1615,11 @@ static void glnvg__renderFill(void* uptr, NVGpaint* paint, NVGcompositeOperation
 	call->blendFunc = glnvg__blendCompositeOperation(compositeOperation);
 
 	if (npaths == 1 && paths[0].convex) call->type = GLNVG_CONVEXFILL;
-	call->triangleCount = (call->type == GLNVG_FILL || hasClipPaths) ? 4 : 0;	// Bounding box fill quad not needed for non-clipped convex fill
+	call->triangleCount = (call->type == GLNVG_FILL || hasClipPaths != 0 || hasClipStack != 0) ? 4 : 0;	// Bounding box fill quad not needed for non-clipped convex fill
 
 	// Allocate vertices for all the paths.
 	maxverts = glnvg__maxVertCount(paths, npaths) + call->triangleCount;
-	maxclipverts = glnvg__maxClipVertCount(paths, npaths) + call->triangleCount;
+	maxclipverts = glnvg__maxClipVertCount(paths, npaths);
 	offset = glnvg__allocVerts(gl, maxverts);
 
 	if (hasClipStack != 0 && hasClipPaths != 0) {
@@ -1707,7 +1735,7 @@ static void glnvg__renderStroke(void* uptr, NVGpaint* paint, NVGcompositeOperati
 	NVGvertex* quad;
 	int i, j, maxverts, maxclipverts, offset, clipOffset, clipPathOffset;
 	int hasClipPaths = (clipPaths != NULL && nclipPaths > 0);
-	int hasClipStack = (gl->clips != NULL && gl->lastClip != NULL) && hasClipPaths != 0;
+	int hasClipStack = (gl->clips != NULL && gl->lastClip != NULL);
 
 	if (call == NULL) return;
 
@@ -1717,11 +1745,11 @@ static void glnvg__renderStroke(void* uptr, NVGpaint* paint, NVGcompositeOperati
 	call->pathCount = npaths;
 	call->image = paint->image;
 	call->blendFunc = glnvg__blendCompositeOperation(compositeOperation);
-	call->triangleCount = (hasClipStack != 0) ? 4 : 0;	// Bounding box fill quad needed for clipped strokes
+	call->triangleCount = (hasClipStack != 0 || hasClipPaths != 0) ? 4 : 0;	// Bounding box fill quad needed for clipped strokes
 
 	// Allocate vertices for all the paths.
-	maxverts = glnvg__maxVertCount(paths, npaths);
-	maxclipverts = glnvg__maxClipVertCount(paths, npaths) + call->triangleCount;
+	maxverts = glnvg__maxVertCount(paths, npaths) + call->triangleCount;
+	maxclipverts = glnvg__maxClipVertCount(paths, npaths);
 	offset = glnvg__allocVerts(gl, maxverts);
 
 	if (hasClipStack != 0 && hasClipPaths != 0) {
