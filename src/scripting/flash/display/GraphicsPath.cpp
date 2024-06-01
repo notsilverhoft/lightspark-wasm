@@ -36,9 +36,9 @@ GraphicsPath::GraphicsPath(ASWorker* wrk, Class_base* c):
 void GraphicsPath::sinit(Class_base* c)
 {
 	CLASS_SETUP(c, ASObject, _constructor, CLASS_SEALED | CLASS_FINAL);
-	REGISTER_GETTER_SETTER(c, commands);
-	REGISTER_GETTER_SETTER(c, data);
-	REGISTER_GETTER_SETTER(c, winding);
+	REGISTER_GETTER_SETTER_RESULTTYPE(c, commands, Vector);
+	REGISTER_GETTER_SETTER_RESULTTYPE(c, data, Vector);
+	REGISTER_GETTER_SETTER_RESULTTYPE(c, winding, ASString);
 	c->setDeclaredMethodByQName("curveTo","",Class<IFunction>::getFunction(c->getSystemState(),curveTo),NORMAL_METHOD,true);
 	c->setDeclaredMethodByQName("lineTo","",Class<IFunction>::getFunction(c->getSystemState(),lineTo),NORMAL_METHOD,true);
 	c->setDeclaredMethodByQName("moveTo","",Class<IFunction>::getFunction(c->getSystemState(),moveTo),NORMAL_METHOD,true);
@@ -188,7 +188,7 @@ ASFUNCTIONBODY_ATOM(GraphicsPath, wideMoveTo)
 	th->data->append(y);
 }
 
-void GraphicsPath::appendToTokens(std::vector<uint64_t>& tokens,Graphics* graphics)
+void GraphicsPath::appendToTokens(tokensVector& tokens,Graphics* graphics)
 {
 	graphics->pathToTokens(commands, data, winding, tokens);
 }

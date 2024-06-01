@@ -43,6 +43,8 @@
 #include "scripting/flash/text/flashtext.h"
 #include "scripting/flash/media/flashmedia.h"
 #include "scripting/flash/geom/flashgeom.h"
+#include "scripting/flash/geom/Rectangle.h"
+#include "scripting/flash/geom/Point.h"
 #include "scripting/avm1/avm1sound.h"
 #include "scripting/avm1/avm1display.h"
 #include "scripting/avm1/avm1media.h"
@@ -1549,7 +1551,7 @@ void DefineTextTag::computeCached()
 			//Apply glyphMatrix first, then scaledTextMatrix
 			glyphMatrix = scaledTextMatrix.multiplyMatrix(glyphMatrix);
 
-			TokenContainer::FromShaperecordListToShapeVector(sr,tokens,fillStyles,glyphMatrix);
+			TokenContainer::FromShaperecordListToShapeVector(sr,tokens,fillStyles,glyphMatrix,list<LINESTYLE2>(),this->TextBounds);
 			curPos.x += ge.GlyphAdvance;
 		}
 	}
@@ -1678,7 +1680,6 @@ void DefineMorphShapeTag::getTokensForRatio(tokensVector& tokens, uint32_t ratio
 	}
 	tokens.filltokens.assign(it->second.filltokens.begin(),it->second.filltokens.end());
 	tokens.stroketokens.assign(it->second.stroketokens.begin(),it->second.stroketokens.end());
-	tokens.canRenderToGL=it->second.canRenderToGL;
 }
 
 DefineMorphShape2Tag::DefineMorphShape2Tag(RECORDHEADER h, std::istream& in, RootMovieClip* root):DefineMorphShapeTag(h, root, 2)
@@ -2357,7 +2358,9 @@ ASObject* DefineButtonTag::instance(Class_base* c)
 			{
 				if(!isSprite[j])
 				{
-					Sprite* spr = Class<Sprite>::getInstanceS(loadedFrom->getInstanceWorker());
+					Sprite* spr = Class<Sprite>::getInstanceSNoArgs(loadedFrom->getInstanceWorker());
+					spr->constructionComplete();
+					spr->afterConstruction();
 					spr->insertLegacyChildAt(LEGACY_DEPTH_START+curDepth[j],states[j]);
 					states[j] = spr;
 					spr->name = BUILTIN_STRINGS::EMPTY;

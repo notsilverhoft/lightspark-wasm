@@ -19,6 +19,8 @@
 
 #include "scripting/flash/display/GraphicsSolidFill.h"
 #include "scripting/flash/display/Graphics.h"
+#include "scripting/toplevel/Number.h"
+#include "scripting/toplevel/UInteger.h"
 #include "scripting/class.h"
 #include "scripting/argconv.h"
 
@@ -32,8 +34,8 @@ GraphicsSolidFill::GraphicsSolidFill(ASWorker* wrk, Class_base* c):
 void GraphicsSolidFill::sinit(Class_base* c)
 {
 	CLASS_SETUP(c, ASObject, _constructor, CLASS_SEALED | CLASS_FINAL);
-	REGISTER_GETTER_SETTER(c, alpha);
-	REGISTER_GETTER_SETTER(c, color);
+	REGISTER_GETTER_SETTER_RESULTTYPE(c, alpha, Number);
+	REGISTER_GETTER_SETTER_RESULTTYPE(c, color, UInteger);
 
 	c->addImplementedInterface(InterfaceClass<IGraphicsFill>::getClass(c->getSystemState()));
 	IGraphicsFill::linkTraits(c);
@@ -55,10 +57,10 @@ FILLSTYLE GraphicsSolidFill::toFillStyle()
 	return Graphics::createSolidFill(color, static_cast<uint8_t>(255*alpha));
 }
 
-void GraphicsSolidFill::appendToTokens(std::vector<uint64_t>& tokens, Graphics* graphics)
+void GraphicsSolidFill::appendToTokens(tokensVector& tokens, Graphics* graphics)
 {
 	FILLSTYLE style = toFillStyle();
 	FILLSTYLE& styleref = graphics->addFillStyle(style);
-	tokens.emplace_back(GeomToken(SET_FILL).uval);
-	tokens.emplace_back(GeomToken(styleref).uval);
+	tokens.filltokens.emplace_back(GeomToken(SET_FILL).uval);
+	tokens.filltokens.emplace_back(GeomToken(styleref).uval);
 }

@@ -380,6 +380,7 @@ std::map<uint16_t,LINESTYLE2>::iterator ShapesBuilder::getStrokeLineStyle(const 
 									break;
 								}
 						}
+						ls.FillType.ShapeBounds = boundsrc;
 						break;
 					}
 				default:
@@ -504,6 +505,7 @@ void ShapesBuilder::outputMorphTokens(std::list<MORPHFILLSTYLE>& styles, std::li
 							break;
 						}
 					}
+					f.ShapeBounds = boundsrc;
 					break;
 				}
 				default:
@@ -627,6 +629,18 @@ void ShapesBuilder::outputMorphTokens(std::list<MORPHFILLSTYLE>& styles, std::li
 	}
 }
 
+void tokensVector::updateTokenBounds(int x, int y)
+{
+	if (x < boundsRect.Xmin)
+		boundsRect.Xmin=x;
+	if (x > boundsRect.Xmax)
+		boundsRect.Xmax=x;
+	if (y < boundsRect.Ymin)
+		boundsRect.Ymin=y;
+	if (y > boundsRect.Ymax)
+		boundsRect.Ymax=y;
+}
+
 bool tokensVector::operator==(const tokensVector& r)
 {
 	return currentLineWidth == r.currentLineWidth && boundsRect == r.boundsRect && filltokens == r.filltokens && stroketokens == r.stroketokens;
@@ -636,8 +650,6 @@ tokensVector& tokensVector::operator=(const tokensVector& r)
 {
 	boundsRect = r.boundsRect;
 	currentLineWidth = r.currentLineWidth;
-	canRenderToGL = r.canRenderToGL;
-	canRenderToMaskGL = r.canRenderToMaskGL;
 	filltokens = r.filltokens;
 	stroketokens = r.stroketokens;
 	return *this;

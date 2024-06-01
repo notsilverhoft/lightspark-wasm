@@ -25,6 +25,7 @@
 #define TWIPS_SCALING_FACTOR 1.0/20.0
 
 #include "forwards/swftypes.h"
+#include "forwards/backends/cachedsurface.h"
 #include "forwards/backends/geometry.h"
 #include "interfaces/backends/graphics.h"
 #include "interfaces/threading.h"
@@ -391,7 +392,7 @@ public:
 	   @param x The X in local coordinates
 	   @param y The Y in local coordinates
 	*/
-	static bool hitTest(const tokensVector& tokens, float scaleFactor, const Vector2f& point);
+	static bool hitTest(const tokensVector& tokens, float scaleFactor, const Vector2f& point, bool includeBoundsRect=false);
 };
 
 struct FormatText

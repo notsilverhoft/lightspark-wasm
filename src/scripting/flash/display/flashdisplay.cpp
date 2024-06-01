@@ -28,6 +28,8 @@
 #include "scripting/flash/display/Graphics.h"
 #include "swf.h"
 #include "scripting/flash/geom/flashgeom.h"
+#include "scripting/flash/geom/Point.h"
+#include "scripting/flash/geom/Rectangle.h"
 #include "scripting/flash/system/flashsystem.h"
 #include "parsing/streams.h"
 #include "parsing/tags.h"
@@ -408,7 +410,7 @@ DisplayObject* DisplayObjectContainer::getLastFrameChildAtDepth(int depth)
 
 void DisplayObjectContainer::fillGraphicsData(Vector* v, bool recursive)
 {
-	if (recursive)
+	if (!recursive)
 		return;
 	std::vector<_R<DisplayObject>> tmplist;
 	cloneDisplayList(tmplist);
@@ -505,7 +507,8 @@ _NR<DisplayObject> Sprite::hitTestImpl(const Vector2f& globalPoint, const Vector
 	if (dragged) // no hitting when in drag/drop mode
 		return ret;
 	ret = DisplayObjectContainer::hitTestImpl(globalPoint, localPoint, type,interactiveObjectsOnly);
-	if (ret.isNull() && !hitArea.isNull() && interactiveObjectsOnly)
+	if (interactiveObjectsOnly && !hitArea.isNull() &&
+		(ret.isNull() || !ret->is<Sprite>() || ret->as<Sprite>()->hitTarget.isNull())) // don't check our hitTarget if we already have a hit on another DisplayObject with a hitTarget
 	{
 		Vector2f hitPoint;
 		// TODO: Add an overload for Vector2f.
@@ -2560,7 +2563,7 @@ void DisplayObjectContainer::handleRemovedEvent(DisplayObject* child, bool keepO
 		getVm(getSystemState())->addEvent(_MR(child), e);
 	}
 	if (!keepOnStage && (child->isOnStage() || !child->getStage().isNull()))
-		child->setOnStage(false, false, inskipping);
+		child->setOnStage(false, true, inskipping);
 }
 
 bool DisplayObjectContainer::_removeChild(DisplayObject* child,bool direct,bool inskipping, bool keeponstage)
@@ -3227,7 +3230,7 @@ void Stage::render(RenderContext &ctxt,const MATRIX* startmatrix)
 		((GLRenderContext&)ctxt).lsglLoadIdentity();
 		((GLRenderContext&)ctxt).setMatrixUniform(GLRenderContext::LSGL_MODELVIEW);
 	}
-	return this->getCachedSurface()->Render(getSystemState(),ctxt,startmatrix);
+	this->getCachedSurface()->Render(getSystemState(),ctxt,startmatrix);
 }
 bool Stage::destruct()
 {

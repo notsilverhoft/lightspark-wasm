@@ -31,6 +31,7 @@
 #include "scripting/flash/display/Loader.h"
 #include "scripting/flash/display/LoaderInfo.h"
 #include "scripting/flash/display/RootMovieClip.h"
+#include "scripting/flash/geom/Rectangle.h"
 #include "scripting/toplevel/ASString.h"
 #include "scripting/toplevel/Number.h"
 #include "scripting/toplevel/Boolean.h"
@@ -1656,17 +1657,16 @@ void ParseThread::parseSWF(UI8 ver)
 		root=RootMovieClip::getInstance(applicationDomain->getInstanceWorker(),li, applicationDomain, securityDomain);
 		if (!applicationDomain->getInstanceWorker()->isPrimordial)
 		{
+			root->incRef();
 			applicationDomain->getInstanceWorker()->rootClip = _MR(root);
 		}
 		parsedObject=_MNR(root);
-		li->setWaitedObject(parsedObject);
 		if(!url.empty())
 			root->setOrigin(url, "");
 	}
 	else
 	{
 		root=getRootMovie();
-		parsedObject->loaderInfo->setWaitedObject(parsedObject);
 	}
 	objectSpinlock.unlock();
 

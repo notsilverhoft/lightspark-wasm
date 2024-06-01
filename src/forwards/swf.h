@@ -26,7 +26,6 @@ namespace lightspark
 {
 
 /* forward declarations */
-class RootMovieClip;
 class ThreadProfile;
 class SystemState;
 class ParseThread;

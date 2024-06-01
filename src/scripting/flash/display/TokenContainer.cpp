@@ -48,8 +48,6 @@ TokenContainer::TokenContainer(DisplayObject* _o, const tokensVector& _tokens, f
 {
 	tokens.filltokens.assign(_tokens.filltokens.begin(),_tokens.filltokens.end());
 	tokens.stroketokens.assign(_tokens.stroketokens.begin(),_tokens.stroketokens.end());
-	tokens.canRenderToGL = _tokens.canRenderToGL;
-	tokens.canRenderToMaskGL = _tokens.canRenderToMaskGL;
 }
 
 /*! \brief Generate a vector of shapes from a SHAPERECORD list
@@ -296,7 +294,6 @@ IDrawable* TokenContainer::invalidate(SMOOTH_MODE smoothing, bool fromgraphics)
 	}
 	if (owner->getSystemState()->getEngineData()->nvgcontext
 		&& !tokens.empty()
-		&& (tokens.canRenderToGL || (owner->belongsToMask() && tokens.canRenderToMaskGL))
 		&& !r
 		&& !DisplayObject::isShaderBlendMode(owner->getBlendMode())
 		&& !owner->hasFilters()
@@ -601,8 +598,10 @@ std::vector<uint64_t>::const_iterator addDrawCommand(GRAPHICSPATH_COMMANDTYPE cm
 void TokenContainer::fillGraphicsData(Vector* v)
 {
 	ASWorker* wrk = owner->getInstanceWorker();
-	MATRIX m = owner->getConcatenatedMatrix(true);
-	m.translate(tokens.boundsRect.Xmin*scaling,tokens.boundsRect.Ymin*scaling);
+	MATRIX m;
+	// TODO it seems that contrary to specs the coordinates are _not_ in relation to stage
+	m.translate(owner->tx+tokens.boundsRect.Xmin*this->scaling,owner->ty+tokens.boundsRect.Ymin*this->scaling);	
+
 	GraphicsPath* currentpath=nullptr;
 	bool infill=false;
 	for (auto it = tokens.filltokens.cbegin(); it != tokens.filltokens.cend(); it++)

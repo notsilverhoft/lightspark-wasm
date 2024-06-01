@@ -116,18 +116,17 @@ struct tokensVector
 	std::vector<uint64_t> stroketokens;
 	RECT boundsRect;
 	uint16_t currentLineWidth;
-	bool canRenderToGL;
-	bool canRenderToMaskGL;
-	tokensVector():boundsRect(INT32_MAX,INT32_MIN,INT32_MAX,INT32_MIN),currentLineWidth(0),canRenderToGL(true),canRenderToMaskGL(true) {}
-	tokensVector(const tokensVector& r):filltokens(r.filltokens),stroketokens(r.stroketokens),boundsRect(r.boundsRect),currentLineWidth(r.currentLineWidth),
-		canRenderToGL(r.canRenderToGL),canRenderToMaskGL(r.canRenderToMaskGL) {}
+	tokensVector():boundsRect(INT32_MAX,INT32_MIN,INT32_MAX,INT32_MIN),currentLineWidth(0)
+	{
+	}
+	tokensVector(const tokensVector& r):filltokens(r.filltokens),stroketokens(r.stroketokens),boundsRect(r.boundsRect),currentLineWidth(r.currentLineWidth)
+	{
+	}
 	void clear()
 	{
 		boundsRect = RECT(INT32_MAX,INT32_MIN,INT32_MAX,INT32_MIN);
 		filltokens.clear();
 		stroketokens.clear();
-		canRenderToGL=true;
-		canRenderToMaskGL=true;
 		currentLineWidth=0;
 	}
 	uint32_t size() const
@@ -138,6 +137,7 @@ struct tokensVector
 	{
 		return filltokens.empty() && stroketokens.empty();
 	}
+	void updateTokenBounds(int x, int y);
 	bool operator==(const tokensVector& r);
 	tokensVector& operator=(const tokensVector& r);
 };

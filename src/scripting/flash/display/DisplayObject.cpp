@@ -27,6 +27,8 @@
 #include "scripting/argconv.h"
 #include "scripting/flash/geom/flashgeom.h"
 #include "scripting/flash/geom/Matrix3D.h"
+#include "scripting/flash/geom/Point.h"
+#include "scripting/flash/geom/Rectangle.h"
 #include "scripting/flash/accessibility/flashaccessibility.h"
 #include "scripting/flash/display/Bitmap.h"
 #include "scripting/flash/display/BitmapData.h"
@@ -161,7 +163,7 @@ bool DisplayObject::belongsToMask() const
 	return false;
 }
 
-DisplayObject::DisplayObject(ASWorker* wrk, Class_base* c):EventDispatcher(wrk,c),matrix(Class<Matrix>::getInstanceS(wrk)),tx(0),ty(0),rotation(0),
+DisplayObject::DisplayObject(ASWorker* wrk, Class_base* c):EventDispatcher(wrk,c),tx(0),ty(0),rotation(0),
 	sx(1),sy(1),alpha(1.0),blendMode(BLENDMODE_NORMAL),isLoadedRoot(false),ismask(false),maxfilterborder(0),ClipDepth(0),
 	avm1PrevDisplayObject(nullptr),avm1NextDisplayObject(nullptr),parent(nullptr),cachedSurface(new CachedSurface()),
 	constructed(false),useLegacyMatrix(true),

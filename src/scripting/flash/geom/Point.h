@@ -17,36 +17,48 @@
     along with this program.  If not, see <http://www.gnu.org/licenses/>.
 **************************************************************************/
 
-#ifndef SCRIPTING_FLASH_NET_LOCALCONNECTION_H
-#define SCRIPTING_FLASH_NET_LOCALCONNECTION_H
+#ifndef SCRIPTING_FLASH_GEOM_POINT_H
+#define SCRIPTING_FLASH_GEOM_POINT_H 1
 
+#include "compat.h"
 #include "asobject.h"
-#include "scripting/flash/events/flashevents.h"
+#include "backends/graphics.h"
 
 namespace lightspark
 {
 
-class LocalConnection: public EventDispatcher
+class Point: public ASObject
 {
 private:
-	uint32_t connectionNameID;
+	number_t x,y;
+	static number_t lenImpl(number_t x, number_t y);
 public:
-	LocalConnection(ASWorker* wrk,Class_base* c);
-	static void sinit(Class_base*);
-	void finalize() override;
+	Point(ASWorker* wrk,Class_base* c,number_t _x = 0, number_t _y = 0):ASObject(wrk,c,T_OBJECT,SUBTYPE_POINT),x(_x),y(_y){}
 	bool destruct() override;
-	bool countCylicMemberReferences(garbagecollectorstate& gcstate) override;
-	void prepareShutdown() override;
+	static void sinit(Class_base* c);
 	ASFUNCTION_ATOM(_constructor);
-	ASPROPERTY_GETTER(bool,isSupported);
-	ASFUNCTION_ATOM(allowDomain);
-	ASFUNCTION_ATOM(allowInsecureDomain);
-	ASFUNCTION_ATOM(send);
-	ASFUNCTION_ATOM(connect);
-	ASFUNCTION_ATOM(close);
-	ASFUNCTION_ATOM(domain);
-	ASPROPERTY_GETTER_SETTER(_NR<ASObject>,client);
+	ASFUNCTION_ATOM(_getX);
+	ASFUNCTION_ATOM(_getY);
+	ASFUNCTION_ATOM(_setX);
+	ASFUNCTION_ATOM(_setY);
+	ASFUNCTION_ATOM(_getlength);
+	ASFUNCTION_ATOM(interpolate);
+	ASFUNCTION_ATOM(distance);
+	ASFUNCTION_ATOM(add);
+	ASFUNCTION_ATOM(subtract);
+	ASFUNCTION_ATOM(clone);
+	ASFUNCTION_ATOM(equals);
+	ASFUNCTION_ATOM(normalize);
+	ASFUNCTION_ATOM(offset);
+	ASFUNCTION_ATOM(polar);
+	ASFUNCTION_ATOM(_toString);
+	ASFUNCTION_ATOM(setTo);
+	ASFUNCTION_ATOM(copyFrom);
+
+	number_t len() const;
+	number_t getX() const { return x; }
+	number_t getY() const { return y; }
 };
 
 }
-#endif // SCRIPTING_FLASH_NET_LOCALCONNECTION_H
+#endif /* SCRIPTING_FLASH_GEOM_POINT_H */
