@@ -211,7 +211,7 @@
 
 /* registers getter/setter with Class_base. To be used in ::sinit()-functions */
 #define REGISTER_GETTER_RESULTTYPE(c,name,cls) \
-	c->setDeclaredMethodByQName(#name,"",Class<IFunction>::getFunction(c->getSystemState(),_getter_##name,0,Class<cls>::getRef(c->getSystemState()).getPtr()),GETTER_METHOD,true)
+	c->setDeclaredMethodByQName(#name,"",c->getSystemState()->getBuiltinFunction(_getter_##name,0,Class<cls>::getRef(c->getSystemState()).getPtr()),GETTER_METHOD,true)
 
 
 #define REGISTER_GETTER_SETTER_RESULTTYPE(c,name,cls) \
@@ -219,23 +219,23 @@
 		REGISTER_SETTER(c,name)
 
 #define REGISTER_GETTER(c,name) \
-	c->setDeclaredMethodByQName(#name,"",Class<IFunction>::getFunction(c->getSystemState(),_getter_##name),GETTER_METHOD,true)
+	c->setDeclaredMethodByQName(#name,"",c->getSystemState()->getBuiltinFunction(_getter_##name),GETTER_METHOD,true)
 
 #define REGISTER_SETTER(c,name) \
-	c->setDeclaredMethodByQName(#name,"",Class<IFunction>::getFunction(c->getSystemState(),_setter_##name),SETTER_METHOD,true)
+	c->setDeclaredMethodByQName(#name,"",c->getSystemState()->getBuiltinFunction(_setter_##name),SETTER_METHOD,true)
 
 #define REGISTER_GETTER_SETTER(c,name) \
 		REGISTER_GETTER(c,name); \
 		REGISTER_SETTER(c,name)
 
 #define REGISTER_GETTER_STATIC(c,name) \
-	c->setDeclaredMethodByQName(#name,"",Class<IFunction>::getFunction(c->getSystemState(),_getter_##name),GETTER_METHOD,false)
+	c->setDeclaredMethodByQName(#name,"",c->getSystemState()->getBuiltinFunction(_getter_##name),GETTER_METHOD,false)
 
 #define REGISTER_SETTER_STATIC(c,name) \
-	c->setDeclaredMethodByQName(#name,"",Class<IFunction>::getFunction(c->getSystemState(),_setter_##name),SETTER_METHOD,false)
+	c->setDeclaredMethodByQName(#name,"",c->getSystemState()->getBuiltinFunction(_setter_##name),SETTER_METHOD,false)
 
 #define REGISTER_GETTER_STATIC_RESULTTYPE(c,name,cls) \
-	c->setDeclaredMethodByQName(#name,"",Class<IFunction>::getFunction(c->getSystemState(),_getter_##name,0,Class<cls>::getRef(c->getSystemState()).getPtr()),GETTER_METHOD,false)
+	c->setDeclaredMethodByQName(#name,"",c->getSystemState()->getBuiltinFunction(_getter_##name,0,Class<cls>::getRef(c->getSystemState()).getPtr()),GETTER_METHOD,false)
 
 #define REGISTER_GETTER_SETTER_STATIC(c,name) \
 		REGISTER_GETTER_STATIC(c,name); \
@@ -258,11 +258,11 @@
 
 #define CLASS_SETUP(c, superClass, constructor, attributes) \
 	CLASS_SETUP_NO_CONSTRUCTOR(c, superClass, attributes); \
-	c->setConstructor(Class<IFunction>::getFunction(c->getSystemState(),constructor));
+	c->setConstructor(c->getSystemState()->getBuiltinFunction(constructor));
 
 #define CLASS_SETUP_CONSTRUCTOR_LENGTH(c, superClass, constructor, ctorlength, attributes) \
 	CLASS_SETUP_NO_CONSTRUCTOR(c, superClass, attributes); \
-	c->setConstructor(Class<IFunction>::getFunction(c->getSystemState(),(constructor), (ctorlength)));
+	c->setConstructor(c->getSystemState()->getBuiltinFunction((constructor), (ctorlength)));
 
 using namespace std;
 namespace lightspark
@@ -773,6 +773,62 @@ public:
 		return nullptr;
 	}
 	
+	FORCE_INLINE variable* findVarOrSetter(SystemState* sys,const multiname& mname, uint32_t traitKinds)
+	{
+		uint32_t name=mname.name_type == multiname::NAME_STRING ? mname.name_s_id : mname.normalizedNameId(sys);
+		
+		var_iterator ret=Variables.find(name);
+		bool noNS = mname.ns.empty(); // no Namespace in multiname means we check for the empty Namespace
+		auto nsIt=mname.ns.begin();
+		
+		variable* res = nullptr;
+		//Find the namespace
+		while(ret!=Variables.end() && ret->first==name)
+		{
+			//breaks when the namespace is not found
+			const nsNameAndKind& ns=ret->second.ns;
+			if((noNS && ns.hasEmptyName()) || (!noNS && ns==*nsIt))
+			{
+				if(ret->second.kind & traitKinds)
+				{
+					res = &ret->second;
+					if (asAtomHandler::isValid(ret->second.var) || asAtomHandler::isValid(ret->second.setter))
+						return &ret->second;
+					else
+					{
+						if (noNS)
+							++ret;
+						else
+						{
+							++nsIt;
+							if(nsIt==mname.ns.cend())
+							{
+								nsIt=mname.ns.cbegin();
+								++ret;
+							}
+						}
+					}
+				}
+				else
+					return res;
+			}
+			else if (noNS)
+			{
+				++ret;
+			}
+			else
+			{
+				++nsIt;
+				if(nsIt==mname.ns.cend())
+				{
+					nsIt=mname.ns.cbegin();
+					++ret;
+				}
+			}
+		}
+		return res;
+	}
+	
 	//Initialize a new variable specifying the type (TODO: add support for const)
 	void initializeVar(multiname &mname, asAtom &obj, multiname *typemname, ABCContext* context, TRAIT_KIND traitKind, ASObject* mainObj, uint32_t slot_id, bool isenumerable);
 	void killObjVar(SystemState* sys, const multiname& mname);
@@ -1145,16 +1201,20 @@ public:
 	 */
 	void initializeVariableByMultiname(multiname &name, asAtom& o, multiname* typemname,
 			ABCContext* context, TRAIT_KIND traitKind, uint32_t slot_id, bool isenumerable);
-	virtual bool deleteVariableByMultiname(const multiname& name, ASWorker* wrk);
+	virtual bool deleteVariableByMultiname(const multiname& name, ASWorker* wrk)
+	{
+		return deleteVariableByMultiname_intern(name, wrk);
+	}
+	bool deleteVariableByMultiname_intern(const multiname& name, ASWorker* wrk);
 	void setVariableByQName(const tiny_string& name, const tiny_string& ns, ASObject* o, TRAIT_KIND traitKind, bool isEnumerable = true);
 	void setVariableByQName(const tiny_string& name, const nsNameAndKind& ns, ASObject* o, TRAIT_KIND traitKind, bool isEnumerable = true);
 	variable *setVariableByQName(uint32_t nameId, const nsNameAndKind& ns, ASObject* o, TRAIT_KIND traitKind, bool isEnumerable = true);
 	variable *setVariableAtomByQName(const tiny_string& name, const nsNameAndKind& ns, asAtom o, TRAIT_KIND traitKind, bool isEnumerable = true);
 	variable *setVariableAtomByQName(uint32_t nameId, const nsNameAndKind& ns, asAtom o, TRAIT_KIND traitKind, bool isEnumerable = true, bool isRefcounted = true);
 	//NOTE: the isBorrowed flag is used to distinguish methods/setters/getters that are inside a class but on behalf of the instances
-	void setDeclaredMethodByQName(const tiny_string& name, const tiny_string& ns, IFunction* o, METHOD_TYPE type, bool isBorrowed, bool isEnumerable = true);
-	void setDeclaredMethodByQName(const tiny_string& name, const nsNameAndKind& ns, IFunction* o, METHOD_TYPE type, bool isBorrowed, bool isEnumerable = true);
-	void setDeclaredMethodByQName(uint32_t nameId, const nsNameAndKind& ns, IFunction* o, METHOD_TYPE type, bool isBorrowed, bool isEnumerable = true);
+	void setDeclaredMethodByQName(const tiny_string& name, const tiny_string& ns, ASObject* o, METHOD_TYPE type, bool isBorrowed, bool isEnumerable = true);
+	void setDeclaredMethodByQName(const tiny_string& name, const nsNameAndKind& ns, ASObject* o, METHOD_TYPE type, bool isBorrowed, bool isEnumerable = true);
+	void setDeclaredMethodByQName(uint32_t nameId, const nsNameAndKind& ns, ASObject* o, METHOD_TYPE type, bool isBorrowed, bool isEnumerable = true);
 	void setDeclaredMethodAtomByQName(const tiny_string& name, const tiny_string& ns, asAtom o, METHOD_TYPE type, bool isBorrowed, bool isEnumerable = true);
 	void setDeclaredMethodAtomByQName(const tiny_string& name, const nsNameAndKind& ns, asAtom o, METHOD_TYPE type, bool isBorrowed, bool isEnumerable = true);
 	void setDeclaredMethodAtomByQName(uint32_t nameId, const nsNameAndKind& ns, asAtom f, METHOD_TYPE type, bool isBorrowed, bool isEnumerable = true);
@@ -1554,6 +1614,7 @@ template<> inline bool ASObject::is<ASQName>() const { return type==T_QNAME; }
 template<> inline bool ASObject::is<ASString>() const { return type==T_STRING; }
 template<> inline bool ASObject::is<ASWorker>() const { return subtype==SUBTYPE_WORKER; }
 template<> inline bool ASObject::is<AVM1Function>() const { return subtype==SUBTYPE_AVM1FUNCTION; }
+template<> inline bool ASObject::is<AVM1Movie>() const { return subtype == SUBTYPE_AVM1MOVIE; }
 template<> inline bool ASObject::is<AVM1MovieClip>() const { return subtype == SUBTYPE_AVM1MOVIECLIP; }
 template<> inline bool ASObject::is<AVM1MovieClipLoader>() const { return subtype == SUBTYPE_AVM1MOVIECLIPLOADER; }
 template<> inline bool ASObject::is<AVM1Sound>() const { return subtype == SUBTYPE_AVM1SOUND; }
@@ -1580,8 +1641,8 @@ template<> inline bool ASObject::is<DatagramSocket>() const { return subtype==SU
 template<> inline bool ASObject::is<DefinitionError>() const { return subtype==SUBTYPE_DEFINITIONERROR; }
 template<> inline bool ASObject::is<Dictionary>() const { return subtype==SUBTYPE_DICTIONARY; }
 template<> inline bool ASObject::is<DisplacementFilter>() const { return subtype==SUBTYPE_DISPLACEMENTFILTER; }
-template<> inline bool ASObject::is<DisplayObject>() const { return subtype==SUBTYPE_DISPLAYOBJECT || subtype==SUBTYPE_INTERACTIVE_OBJECT || subtype==SUBTYPE_TEXTFIELD || subtype==SUBTYPE_BITMAP || subtype==SUBTYPE_DISPLAYOBJECTCONTAINER || subtype==SUBTYPE_STAGE || subtype==SUBTYPE_ROOTMOVIECLIP || subtype==SUBTYPE_SPRITE || subtype == SUBTYPE_MOVIECLIP || subtype == SUBTYPE_TEXTLINE || subtype == SUBTYPE_VIDEO || subtype == SUBTYPE_SIMPLEBUTTON || subtype == SUBTYPE_SHAPE || subtype == SUBTYPE_MORPHSHAPE || subtype==SUBTYPE_LOADER || subtype == SUBTYPE_AVM1MOVIECLIP; }
-template<> inline bool ASObject::is<DisplayObjectContainer>() const { return subtype==SUBTYPE_DISPLAYOBJECTCONTAINER || subtype==SUBTYPE_STAGE || subtype==SUBTYPE_ROOTMOVIECLIP || subtype==SUBTYPE_SPRITE || subtype == SUBTYPE_MOVIECLIP || subtype == SUBTYPE_TEXTLINE || subtype == SUBTYPE_SIMPLEBUTTON || subtype==SUBTYPE_LOADER || subtype == SUBTYPE_AVM1MOVIECLIP; }
+template<> inline bool ASObject::is<DisplayObject>() const { return subtype==SUBTYPE_DISPLAYOBJECT || subtype==SUBTYPE_INTERACTIVE_OBJECT || subtype==SUBTYPE_TEXTFIELD || subtype==SUBTYPE_BITMAP || subtype==SUBTYPE_DISPLAYOBJECTCONTAINER || subtype==SUBTYPE_STAGE || subtype==SUBTYPE_ROOTMOVIECLIP || subtype==SUBTYPE_SPRITE || subtype == SUBTYPE_MOVIECLIP || subtype == SUBTYPE_TEXTLINE || subtype == SUBTYPE_VIDEO || subtype == SUBTYPE_SIMPLEBUTTON || subtype == SUBTYPE_SHAPE || subtype == SUBTYPE_MORPHSHAPE || subtype==SUBTYPE_LOADER || subtype == SUBTYPE_AVM1MOVIECLIP || subtype == SUBTYPE_AVM1MOVIE; }
+template<> inline bool ASObject::is<DisplayObjectContainer>() const { return subtype==SUBTYPE_DISPLAYOBJECTCONTAINER || subtype==SUBTYPE_STAGE || subtype==SUBTYPE_ROOTMOVIECLIP || subtype==SUBTYPE_SPRITE || subtype == SUBTYPE_MOVIECLIP || subtype == SUBTYPE_TEXTLINE || subtype == SUBTYPE_SIMPLEBUTTON || subtype==SUBTYPE_LOADER || subtype == SUBTYPE_AVM1MOVIECLIP || subtype == SUBTYPE_AVM1MOVIE; }
 template<> inline bool ASObject::is<DropShadowFilter>() const { return subtype==SUBTYPE_DROPSHADOWFILTER; }
 template<> inline bool ASObject::is<EastAsianJustifier>() const { return subtype==SUBTYPE_EASTASIANJUSTIFIER; }
 template<> inline bool ASObject::is<ElementFormat>() const { return subtype==SUBTYPE_ELEMENTFORMAT; }
@@ -1606,7 +1667,7 @@ template<> inline bool ASObject::is<GraphicsSolidFill>() const { return subtype=
 template<> inline bool ASObject::is<IFunction>() const { return type==T_FUNCTION; }
 template<> inline bool ASObject::is<IndexBuffer3D>() const { return subtype==SUBTYPE_INDEXBUFFER3D; }
 template<> inline bool ASObject::is<Integer>() const { return type==T_INTEGER; }
-template<> inline bool ASObject::is<InteractiveObject>() const { return subtype==SUBTYPE_INTERACTIVE_OBJECT || subtype==SUBTYPE_TEXTFIELD || subtype==SUBTYPE_DISPLAYOBJECTCONTAINER || subtype==SUBTYPE_STAGE || subtype==SUBTYPE_ROOTMOVIECLIP || subtype==SUBTYPE_SPRITE || subtype == SUBTYPE_MOVIECLIP || subtype == SUBTYPE_SIMPLEBUTTON || subtype==SUBTYPE_LOADER || subtype == SUBTYPE_AVM1MOVIECLIP; }
+template<> inline bool ASObject::is<InteractiveObject>() const { return subtype==SUBTYPE_INTERACTIVE_OBJECT || subtype==SUBTYPE_TEXTFIELD || subtype==SUBTYPE_DISPLAYOBJECTCONTAINER || subtype==SUBTYPE_STAGE || subtype==SUBTYPE_ROOTMOVIECLIP || subtype==SUBTYPE_SPRITE || subtype == SUBTYPE_MOVIECLIP || subtype == SUBTYPE_SIMPLEBUTTON || subtype==SUBTYPE_LOADER || subtype == SUBTYPE_AVM1MOVIECLIP || subtype == SUBTYPE_AVM1MOVIE; }
 template<> inline bool ASObject::is<LocalConnection>() const { return subtype==SUBTYPE_LOCALCONNECTION; }
 template<> inline bool ASObject::is<KeyboardEvent>() const { return subtype==SUBTYPE_KEYBOARD_EVENT; }
 template<> inline bool ASObject::is<Loader>() const { return subtype==SUBTYPE_LOADER; }

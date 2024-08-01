@@ -251,14 +251,14 @@ public:
 class TextLine: public DisplayObjectContainer, public TextData, public TokenContainer
 {
 private:
-	// these are only used when drawing to DisplayObject, so they are guarranteed not to be destroyed during rendering
-	list<FILLSTYLE> fillstyleTextColor;
+	tokensVector tokens;
+
 	// Much of the rendering/bounds checking/hit testing code is
 	// similar to TextField and should be shared
 	bool boundsRect(number_t& xmin, number_t& xmax, number_t& ymin, number_t& ymax, bool visibleOnly) override;
 	void requestInvalidation(InvalidateQueue* q, bool forceTextureRefresh=false) override;
 	IDrawable* invalidate(bool smoothing) override;
-	_NR<DisplayObject> hitTestImpl(const Vector2f& globalPoint, const Vector2f& localPoint, DisplayObject::HIT_TYPE type,bool interactiveObjectsOnly) override;
+	_NR<DisplayObject> hitTestImpl(const Vector2f& globalPoint, const Vector2f& localPoint, HIT_TYPE type,bool interactiveObjectsOnly) override;
 public:
 	TextLine(ASWorker* wrk,Class_base* c, _NR<TextBlock> owner=NullRef);
 	static void sinit(Class_base* c);

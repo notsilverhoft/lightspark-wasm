@@ -209,6 +209,7 @@ SET(PLUGIN_DIRECTORY "${LIBDIR}/mozilla/plugins" CACHE STRING "Directory to inst
 SET(PPAPI_PLUGIN_DIRECTORY "${LIBDIR}/PepperFlash" CACHE STRING "Directory to install PPAPI plugin to")
 SET(MANUAL_DIRECTORY "share/man" CACHE STRING "Directory to install manual to (UNIX only)")
 SET(ENABLE_SSE2 TRUE CACHE BOOL "Enable use of SSE2 asm instructions (x86/x86_64 only)")
+SET(INSTALL_SYSTEM_CONFIGURATION TRUE CACHE BOOL "Install system wide configuration file (UNIX only)")
 
 IF(ENABLE_DEBIAN_ALTERNATIVES OR WIN32)
   SET(PLUGIN_DIRECTORY ${PRIVATELIBDIR})
@@ -427,10 +428,10 @@ ENDIF(ENABLE_MEMORY_USAGE_PROFILING)
 IF(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
   IF(MINGW)
     SET(CMAKE_CXX_FLAGS
-          "${CMAKE_CXX_FLAGS} -mms-bitfields -mthreads -fexceptions -Wall -Wnon-virtual-dtor -Woverloaded-virtual -pipe -std=c++11 -Wdisabled-optimization -Wextra -Wno-unused-parameter -Wno-invalid-offsetof")
+          "${CMAKE_CXX_FLAGS} -mms-bitfields -mthreads -fexceptions -Wall -Wnon-virtual-dtor -Woverloaded-virtual -pipe -std=c++14 -Wdisabled-optimization -Wextra -Wno-unused-parameter -Wno-invalid-offsetof")
   ELSE()
    SET(CMAKE_CXX_FLAGS
-          "${CMAKE_CXX_FLAGS} -Wall -Wnon-virtual-dtor -Woverloaded-virtual -pipe -fvisibility=hidden -fvisibility-inlines-hidden -std=c++11 -Wdisabled-optimization -Wextra -Wno-unused-parameter -Wno-invalid-offsetof")
+          "${CMAKE_CXX_FLAGS} -Wall -Wnon-virtual-dtor -Woverloaded-virtual -pipe -fvisibility=hidden -fvisibility-inlines-hidden -std=c++14 -Wdisabled-optimization -Wextra -Wno-unused-parameter -Wno-invalid-offsetof")
   ENDIF()
   SET(CMAKE_CXX_FLAGS_MEMORY "-g -O0 -DEXPENSIVE_DEBUG -fsanitize=address")
   SET(CMAKE_CXX_FLAGS_DEBUG "-g -O0 -DEXPENSIVE_DEBUG")
@@ -442,7 +443,7 @@ IF(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
 ENDIF(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
 IF(CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
   SET(CMAKE_CXX_FLAGS
-	  "${CMAKE_CXX_FLAGS} -Wall -Wnon-virtual-dtor -Woverloaded-virtual -Wno-undefined-var-template -pipe -fvisibility=hidden -fvisibility-inlines-hidden -std=c++11 -Wdisabled-optimization -Wextra -Wno-unused-parameter -Wno-invalid-offsetof")
+	  "${CMAKE_CXX_FLAGS} -Wall -Wnon-virtual-dtor -Woverloaded-virtual -Wno-undefined-var-template -pipe -fvisibility=hidden -fvisibility-inlines-hidden -std=c++14 -Wdisabled-optimization -Wextra -Wno-unused-parameter -Wno-invalid-offsetof")
   SET(CMAKE_CXX_FLAGS_MEMORY "-g -O0 -DEXPENSIVE_DEBUG -fsanitize=address")
   SET(CMAKE_CXX_FLAGS_DEBUG "-g -O0 -DEXPENSIVE_DEBUG")
   SET(CMAKE_CXX_FLAGS_PROFILE "-g -pg -O2")
@@ -496,8 +497,10 @@ if(UNIX)
 endif(UNIX)
 
 if(UNIX)
-	INSTALL(FILES etc/xdg/lightspark.conf
-		      DESTINATION ${ETCDIR}/xdg/)
+  IF(INSTALL_SYSTEM_CONFIGURATION)
+    INSTALL(FILES etc/xdg/lightspark.conf
+	    DESTINATION ${ETCDIR}/xdg/)
+  ENDIF(INSTALL_SYSTEM_CONFIGURATION)
 ELSE()
   INSTALL(FILES COPYING DESTINATION "." RENAME COPYING.txt)
   INSTALL(FILES COPYING.LESSER DESTINATION "." RENAME COPYING.LESSER.txt)
@@ -523,9 +526,10 @@ SET(CPACK_STRIP_FILES FALSE)
 SET(CPACK_RESOURCE_FILE_LICENSE ${PROJECT_SOURCE_DIR}/COPYING)
 SET(CPACK_NSIS_HELP_LINK "http:////www.lightspark.org")
 SET(CPACK_NSIS_URL_INFO_ABOUT "http:////www.lightspark.org")
-SET(CPACK_PACKAGE_ICON ${PROJECT_SOURCE_DIR}/media/lightspark-logo.svg)
+#-- SET(CPACK_PACKAGE_ICON ${PROJECT_SOURCE_DIR}/media/lightspark-logo.svg)
 IF(WIN32)
   SET(CPACK_PACKAGE_INSTALL_DIRECTORY "Lightspark")
+  SET(CPACK_PACKAGE_EXECUTABLES "lightspark" "Lightspark")
   SET(CPACK_NSIS_EXTRA_INSTALL_COMMANDS "
   WriteRegStr HKCU 'Software\\\\MozillaPlugins\\\\@lightspark.github.com/Lightspark;version=1' 'Description' 'Lightspark'
   WriteRegStr HKCU 'Software\\\\MozillaPlugins\\\\@lightspark.github.com/Lightspark;version=1' 'ProductName' 'Lightspark'

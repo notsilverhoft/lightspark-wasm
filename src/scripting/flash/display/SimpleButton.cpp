@@ -21,6 +21,7 @@
 
 #include "scripting/flash/display/SimpleButton.h"
 #include "scripting/flash/display/RootMovieClip.h"
+#include "scripting/flash/display/Stage.h"
 #include "parsing/tags.h"
 #include "scripting/class.h"
 #include "scripting/flash/media/flashmedia.h"
@@ -35,18 +36,18 @@ void SimpleButton::sinit(Class_base* c)
 {
 	CLASS_SETUP(c, InteractiveObject, _constructor, CLASS_SEALED);
 	c->isReusable=true;
-	c->setDeclaredMethodByQName("upState","",Class<IFunction>::getFunction(c->getSystemState(),_getUpState),GETTER_METHOD,true);
-	c->setDeclaredMethodByQName("upState","",Class<IFunction>::getFunction(c->getSystemState(),_setUpState),SETTER_METHOD,true);
-	c->setDeclaredMethodByQName("downState","",Class<IFunction>::getFunction(c->getSystemState(),_getDownState),GETTER_METHOD,true);
-	c->setDeclaredMethodByQName("downState","",Class<IFunction>::getFunction(c->getSystemState(),_setDownState),SETTER_METHOD,true);
-	c->setDeclaredMethodByQName("overState","",Class<IFunction>::getFunction(c->getSystemState(),_getOverState),GETTER_METHOD,true);
-	c->setDeclaredMethodByQName("overState","",Class<IFunction>::getFunction(c->getSystemState(),_setOverState),SETTER_METHOD,true);
-	c->setDeclaredMethodByQName("hitTestState","",Class<IFunction>::getFunction(c->getSystemState(),_getHitTestState),GETTER_METHOD,true);
-	c->setDeclaredMethodByQName("hitTestState","",Class<IFunction>::getFunction(c->getSystemState(),_setHitTestState),SETTER_METHOD,true);
-	c->setDeclaredMethodByQName("enabled","",Class<IFunction>::getFunction(c->getSystemState(),_getEnabled),GETTER_METHOD,true);
-	c->setDeclaredMethodByQName("enabled","",Class<IFunction>::getFunction(c->getSystemState(),_setEnabled),SETTER_METHOD,true);
-	c->setDeclaredMethodByQName("useHandCursor","",Class<IFunction>::getFunction(c->getSystemState(),_getUseHandCursor),GETTER_METHOD,true);
-	c->setDeclaredMethodByQName("useHandCursor","",Class<IFunction>::getFunction(c->getSystemState(),_setUseHandCursor),SETTER_METHOD,true);
+	c->setDeclaredMethodByQName("upState","",c->getSystemState()->getBuiltinFunction(_getUpState),GETTER_METHOD,true);
+	c->setDeclaredMethodByQName("upState","",c->getSystemState()->getBuiltinFunction(_setUpState),SETTER_METHOD,true);
+	c->setDeclaredMethodByQName("downState","",c->getSystemState()->getBuiltinFunction(_getDownState),GETTER_METHOD,true);
+	c->setDeclaredMethodByQName("downState","",c->getSystemState()->getBuiltinFunction(_setDownState),SETTER_METHOD,true);
+	c->setDeclaredMethodByQName("overState","",c->getSystemState()->getBuiltinFunction(_getOverState),GETTER_METHOD,true);
+	c->setDeclaredMethodByQName("overState","",c->getSystemState()->getBuiltinFunction(_setOverState),SETTER_METHOD,true);
+	c->setDeclaredMethodByQName("hitTestState","",c->getSystemState()->getBuiltinFunction(_getHitTestState),GETTER_METHOD,true);
+	c->setDeclaredMethodByQName("hitTestState","",c->getSystemState()->getBuiltinFunction(_setHitTestState),SETTER_METHOD,true);
+	c->setDeclaredMethodByQName("enabled","",c->getSystemState()->getBuiltinFunction(_getEnabled),GETTER_METHOD,true);
+	c->setDeclaredMethodByQName("enabled","",c->getSystemState()->getBuiltinFunction(_setEnabled),SETTER_METHOD,true);
+	c->setDeclaredMethodByQName("useHandCursor","",c->getSystemState()->getBuiltinFunction(_getUseHandCursor),GETTER_METHOD,true);
+	c->setDeclaredMethodByQName("useHandCursor","",c->getSystemState()->getBuiltinFunction(_setUseHandCursor),SETTER_METHOD,true);
 }
 
 void SimpleButton::afterLegacyInsert()
@@ -86,7 +87,7 @@ bool SimpleButton::AVM1HandleMouseEvent(EventDispatcher* dispatcher, MouseEvent 
 			number_t x1,y1;
 			// TODO: Add an overload for Vector2f.
 			this->globalToLocal(x,y,x1,y1);
-			_NR<DisplayObject> d = hitTest(Vector2f(x,y), Vector2f(x1,y1), DisplayObject::MOUSE_CLICK_HIT,true);
+			_NR<DisplayObject> d = hitTest(Vector2f(x,y), Vector2f(x1,y1), MOUSE_CLICK_HIT,true);
 			dispobj=d.getPtr();
 		}
 		if (dispobj!= this)
@@ -319,7 +320,7 @@ bool SimpleButton::AVM1HandleKeyboardEvent(KeyboardEvent *e)
 }
 
 
-_NR<DisplayObject> SimpleButton::hitTestImpl(const Vector2f& globalPoint, const Vector2f& localPoint, DisplayObject::HIT_TYPE type,bool interactiveObjectsOnly)
+_NR<DisplayObject> SimpleButton::hitTestImpl(const Vector2f& globalPoint, const Vector2f& localPoint, HIT_TYPE type,bool interactiveObjectsOnly)
 {
 	_NR<DisplayObject> ret = NullRef;
 	if(hitTestState)
@@ -447,25 +448,31 @@ SimpleButton::SimpleButton(ASWorker* wrk, Class_base* c, DisplayObject *dS, Disp
 		dS->addStoredMember();
 		dS->advanceFrame(false);
 		dS->initFrame();
+		getSystemState()->stage->removeHiddenObject(dS); // avoid any changes when not visible
 	}
 	if(hTS)
 	{
 		hTS->addStoredMember();
 		hTS->advanceFrame(false);
 		hTS->initFrame();
+		getSystemState()->stage->removeHiddenObject(hTS); // avoid any changes when not visible
 	}
 	if(oS)
 	{
 		oS->addStoredMember();
 		oS->advanceFrame(false);
 		oS->initFrame();
+		getSystemState()->stage->removeHiddenObject(oS); // avoid any changes when not visible
 	}
 	if(uS)
 	{
 		uS->addStoredMember();
 		uS->advanceFrame(false);
 		uS->initFrame();
+		getSystemState()->stage->removeHiddenObject(uS); // avoid any changes when not visible
 	}
+	if (tag)
+		this->loadedFrom = tag->loadedFrom;
 	if (!needsActionScript3())
 	{
 		asAtom obj = asAtomHandler::fromObjectNoPrimitive(this);
@@ -614,13 +621,6 @@ bool SimpleButton::countCylicMemberReferences(garbagecollectorstate& gcstate)
 }
 IDrawable *SimpleButton::invalidate(bool smoothing)
 {
-	IDrawable* res = getFilterDrawable(smoothing);
-	if (res)
-	{
-		Locker l(mutexDisplayList);
-		res->getState()->setupChildrenList(dynamicDisplayList);
-		return res;
-	}
 	return DisplayObjectContainer::invalidate(smoothing);
 }
 void SimpleButton::requestInvalidation(InvalidateQueue* q, bool forceTextureRefresh)
@@ -680,6 +680,8 @@ ASFUNCTIONBODY_ATOM(SimpleButton,_constructor)
 void SimpleButton::reflectState(BUTTONSTATE oldstate)
 {
 	assert(dynamicDisplayList.empty() || dynamicDisplayList.size() == 1);
+	if (isConstructed() && oldstate==currentState)
+		return;
 	if(!dynamicDisplayList.empty())
 	{
 		_removeChild(dynamicDisplayList.front(),true);

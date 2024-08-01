@@ -65,9 +65,12 @@
 #include "scripting/flash/display/Loader.h"
 #include "scripting/flash/display/LoaderInfo.h"
 #include "scripting/flash/display/MorphShape.h"
+#include "scripting/flash/display/MovieClip.h"
 #include "scripting/flash/display/NativeWindow.h"
 #include "scripting/flash/display/Shape.h"
 #include "scripting/flash/display/SimpleButton.h"
+#include "scripting/flash/display/StageAspectRatio.h"
+#include "scripting/flash/display/Stage.h"
 #include "scripting/flash/display3d/flashdisplay3d.h"
 #include "scripting/flash/display3d/flashdisplay3dtextures.h"
 #include "scripting/flash/events/flashevents.h"
@@ -173,6 +176,7 @@
 #include "scripting/avm1/avm1text.h"
 #include "scripting/avm1/avm1ui.h"
 #include "scripting/avm1/avm1xml.h"
+#include "scripting/avm1/avm1array.h"
 
 using namespace lightspark;
 

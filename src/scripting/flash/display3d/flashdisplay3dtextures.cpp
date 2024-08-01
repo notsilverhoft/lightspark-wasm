@@ -42,9 +42,9 @@ void jpegxrcallback(jxr_image_t image, int mx, int my, int* data)
 			uint32_t pos=my*16*2*w+mx*16*2;
 			for (uint32_t i=0; i < 16*16*n && pos < imgdata->result->size(); i+=n)
 			{
-				int r = data[i+2];
-				int g = data[i+1];
-				int b = data[i];
+				uint32_t r = data[i+2]&0x1f;
+				uint32_t g = data[i+1]&0x3f;
+				uint32_t b = data[i]&0x1f;
 				// the r,g,b values are already computed to 5-6-5 format
 				// convert to 2 byte rgb565 with the lower byte first
 				(*imgdata->result)[pos++] = ((g<<5)&0xe0) | b;
@@ -251,7 +251,7 @@ void TextureBase::fillFromDXT5(bool hasalphadata, bool hasrgbdata, uint32_t leve
 		for (uint32_t j=0; j < w*h/16; j++)
 		{
 			bitmaparray[level][pos++]=alphaimagedata[j];
-			bitmaparray[level][pos++]=alphaimagedata[j+lowerhalf];
+			bitmaparray[level][pos++]=alphaimagedata[j+lowerhalf*2];;
 			bitmaparray[level][pos++]=alphadata[j*6  ];
 			bitmaparray[level][pos++]=alphadata[j*6+1];
 			bitmaparray[level][pos++]=alphadata[j*6+2];
@@ -302,6 +302,7 @@ void TextureBase::parseAdobeTextureFormat(ByteArray *data, int32_t byteArrayOffs
 	data->readByte(reserved[2]);
 	data->readByte(reserved[3]);
 	uint32_t len;
+	uint32_t numtextures=UINT32_MAX;
 	if (reserved[3] != 0xff) // fourth byte is not 0xff, so it's ATF version "0"(?)
 	{
 		len = uint32_t(reserved[0]<<16) | uint32_t(reserved[1]<<8) | uint32_t(reserved[2]);
@@ -309,6 +310,8 @@ void TextureBase::parseAdobeTextureFormat(ByteArray *data, int32_t byteArrayOffs
 	}
 	else
 	{
+		if (reserved[2]) // LSB indicates if mipmaps are available, other 7 bits set number of mipmaps filled
+			numtextures = ((reserved[2] & 1) == 1) ? 1 : (reserved[2] >> 1)&0x7f;
 		data->readByte(atfversion);
 		data->readUnsignedInt(len);
 		data->readByte(formatbyte);
@@ -351,8 +354,8 @@ void TextureBase::parseAdobeTextureFormat(ByteArray *data, int32_t byteArrayOffs
 	}
 	width = 1<<b1;
 	height = 1<<b2;
-	
-	uint32_t texcount = b3 * (forCubeTexture ? 6 : 1);
+	maxmiplevel = (numtextures == UINT32_MAX ? b3  : numtextures);
+	uint32_t texcount = maxmiplevel * (forCubeTexture ? 6 : 1);
 	if (bitmaparray.size() < texcount)
 		bitmaparray.resize(texcount);
 	uint32_t tmpwidth = width;
@@ -612,13 +615,14 @@ void TextureBase::setFormat(const tiny_string& f)
 }
 uint32_t TextureBase::getBytesNeeded(uint32_t miplevel)
 {
+	uint32_t numpixels = max(width>>miplevel,1U)*max(height>>miplevel,1U);
 	switch (format)
 	{
 		case TEXTUREFORMAT::BGRA:
-			return (width>>miplevel)*(height>>miplevel)*4;
+			return numpixels*4;
 		case TEXTUREFORMAT::BGRA_PACKED:
 		case TEXTUREFORMAT::BGR_PACKED:
-			return (width>>miplevel)*(height>>miplevel)*2;
+			return numpixels*2;
 		case TEXTUREFORMAT::COMPRESSED:
 		case TEXTUREFORMAT::COMPRESSED_ALPHA:
 			LOG(LOG_NOT_IMPLEMENTED,"TextureBase::getBytesNeeded for compressed formats");
@@ -629,7 +633,7 @@ uint32_t TextureBase::getBytesNeeded(uint32_t miplevel)
 		default:
 			break;
 	}
-	return (width>>miplevel)*(height>>miplevel)*4;
+	return numpixels*4;
 }
 
 void TextureBase::uploadFromBitmapDataIntern(BitmapData* source, uint32_t miplevel, uint32_t side, uint32_t max_miplevel)
@@ -638,7 +642,9 @@ void TextureBase::uploadFromBitmapDataIntern(BitmapData* source, uint32_t miplev
 	format = TEXTUREFORMAT::BGRA;
 	if (bitmaparray.size() <= miplevel)
 		bitmaparray.resize(miplevel+1);
-	uint32_t mipsize = (width>>miplevel)*(height>>miplevel)*4;
+	if (maxmiplevel < miplevel)
+		maxmiplevel = miplevel;
+	uint32_t mipsize = getBytesNeeded(miplevel);
 	uint32_t bitmappos = max_miplevel*side + miplevel;
 	bitmaparray[bitmappos].resize(mipsize);
 	uint32_t sourcewidth = source->getBitmapContainer()->getWidth();
@@ -672,6 +678,8 @@ void TextureBase::uploadFromByteArrayIntern(ByteArray* source, uint32_t offset, 
 	context->rendermutex.lock();
 	if (bitmaparray.size() <= miplevel)
 		bitmaparray.resize(miplevel+1);
+	if (maxmiplevel < miplevel)
+		maxmiplevel = miplevel;
 	uint32_t mipsize = getBytesNeeded(miplevel);
 	bitmaparray[miplevel].resize(mipsize);
 	uint32_t bytesneeded = getBytesNeeded(miplevel);
@@ -711,7 +719,7 @@ void TextureBase::uploadFromByteArrayIntern(ByteArray* source, uint32_t offset, 
 void TextureBase::sinit(Class_base *c)
 {
 	CLASS_SETUP_NO_CONSTRUCTOR(c, EventDispatcher, CLASS_SEALED);
-	c->setDeclaredMethodByQName("dispose","",Class<IFunction>::getFunction(c->getSystemState(),dispose),NORMAL_METHOD,true);
+	c->setDeclaredMethodByQName("dispose","",c->getSystemState()->getBuiltinFunction(dispose),NORMAL_METHOD,true);
 }
 
 bool TextureBase::destruct()
@@ -719,8 +727,14 @@ bool TextureBase::destruct()
 	renderaction action;
 	action.action =RENDER_ACTION::RENDER_DELETETEXTURE;
 	action.udata1 = textureID;
+	action.udata2 = textureframebuffer;
+	action.udata3 = depthRenderBuffer;
+	action.fdata[0] = stencilRenderBuffer;
 	context->addAction(action);
 	textureID=UINT32_MAX;
+	depthRenderBuffer = UINT32_MAX;
+	textureframebuffer = UINT32_MAX;
+	stencilRenderBuffer = UINT32_MAX;
 	width=0;
 	height=0;
 	async=false;
@@ -735,16 +749,22 @@ ASFUNCTIONBODY_ATOM(TextureBase,dispose)
 	renderaction action;
 	action.action =RENDER_ACTION::RENDER_DELETETEXTURE;
 	action.udata1 = th->textureID;
+	action.udata2 = th->textureframebuffer;
+	action.udata3 = th->depthRenderBuffer;
+	action.fdata[0] = th->stencilRenderBuffer;
 	th->context->addAction(action);
 	th->textureID=UINT32_MAX;
+	th->depthRenderBuffer = UINT32_MAX;
+	th->textureframebuffer = UINT32_MAX;
+	th->stencilRenderBuffer = UINT32_MAX;
 }
 
 void Texture::sinit(Class_base *c)
 {
 	CLASS_SETUP_NO_CONSTRUCTOR(c, TextureBase, CLASS_SEALED);
-	c->setDeclaredMethodByQName("uploadCompressedTextureFromByteArray","",Class<IFunction>::getFunction(c->getSystemState(),uploadCompressedTextureFromByteArray),NORMAL_METHOD,true);
-	c->setDeclaredMethodByQName("uploadFromByteArray","",Class<IFunction>::getFunction(c->getSystemState(),uploadFromByteArray),NORMAL_METHOD,true);
-	c->setDeclaredMethodByQName("uploadFromBitmapData","",Class<IFunction>::getFunction(c->getSystemState(),uploadFromBitmapData),NORMAL_METHOD,true);
+	c->setDeclaredMethodByQName("uploadCompressedTextureFromByteArray","",c->getSystemState()->getBuiltinFunction(uploadCompressedTextureFromByteArray),NORMAL_METHOD,true);
+	c->setDeclaredMethodByQName("uploadFromByteArray","",c->getSystemState()->getBuiltinFunction(uploadFromByteArray),NORMAL_METHOD,true);
+	c->setDeclaredMethodByQName("uploadFromBitmapData","",c->getSystemState()->getBuiltinFunction(uploadFromBitmapData),NORMAL_METHOD,true);
 }
 ASFUNCTIONBODY_ATOM(Texture,uploadCompressedTextureFromByteArray)
 {
@@ -818,9 +838,9 @@ ASFUNCTIONBODY_ATOM(Texture,uploadFromByteArray)
 void CubeTexture::sinit(Class_base *c)
 {
 	CLASS_SETUP_NO_CONSTRUCTOR(c, TextureBase, CLASS_SEALED);
-	c->setDeclaredMethodByQName("uploadCompressedTextureFromByteArray","",Class<IFunction>::getFunction(c->getSystemState(),uploadCompressedTextureFromByteArray),NORMAL_METHOD,true);
-	c->setDeclaredMethodByQName("uploadFromByteArray","",Class<IFunction>::getFunction(c->getSystemState(),uploadFromByteArray),NORMAL_METHOD,true);
-	c->setDeclaredMethodByQName("uploadFromBitmapData","",Class<IFunction>::getFunction(c->getSystemState(),uploadFromBitmapData),NORMAL_METHOD,true);
+	c->setDeclaredMethodByQName("uploadCompressedTextureFromByteArray","",c->getSystemState()->getBuiltinFunction(uploadCompressedTextureFromByteArray),NORMAL_METHOD,true);
+	c->setDeclaredMethodByQName("uploadFromByteArray","",c->getSystemState()->getBuiltinFunction(uploadFromByteArray),NORMAL_METHOD,true);
+	c->setDeclaredMethodByQName("uploadFromBitmapData","",c->getSystemState()->getBuiltinFunction(uploadFromBitmapData),NORMAL_METHOD,true);
 }
 ASFUNCTIONBODY_ATOM(CubeTexture,uploadCompressedTextureFromByteArray)
 {
@@ -899,8 +919,8 @@ ASFUNCTIONBODY_ATOM(CubeTexture,uploadFromByteArray)
 void RectangleTexture::sinit(Class_base *c)
 {
 	CLASS_SETUP_NO_CONSTRUCTOR(c, TextureBase, CLASS_SEALED);
-	c->setDeclaredMethodByQName("uploadFromByteArray","",Class<IFunction>::getFunction(c->getSystemState(),uploadFromByteArray),NORMAL_METHOD,true);
-	c->setDeclaredMethodByQName("uploadFromBitmapData","",Class<IFunction>::getFunction(c->getSystemState(),uploadFromBitmapData),NORMAL_METHOD,true);
+	c->setDeclaredMethodByQName("uploadFromByteArray","",c->getSystemState()->getBuiltinFunction(uploadFromByteArray),NORMAL_METHOD,true);
+	c->setDeclaredMethodByQName("uploadFromBitmapData","",c->getSystemState()->getBuiltinFunction(uploadFromBitmapData),NORMAL_METHOD,true);
 }
 ASFUNCTIONBODY_ATOM(RectangleTexture,uploadFromBitmapData)
 {
@@ -936,8 +956,8 @@ void VideoTexture::sinit(Class_base *c)
 	CLASS_SETUP_NO_CONSTRUCTOR(c, TextureBase, CLASS_SEALED);
 	REGISTER_GETTER(c,videoHeight);
 	REGISTER_GETTER(c,videoWidth);
-	c->setDeclaredMethodByQName("attachCamera","",Class<IFunction>::getFunction(c->getSystemState(),attachCamera),NORMAL_METHOD,true);
-	c->setDeclaredMethodByQName("attachNetStream","",Class<IFunction>::getFunction(c->getSystemState(),attachNetStream),NORMAL_METHOD,true);
+	c->setDeclaredMethodByQName("attachCamera","",c->getSystemState()->getBuiltinFunction(attachCamera),NORMAL_METHOD,true);
+	c->setDeclaredMethodByQName("attachNetStream","",c->getSystemState()->getBuiltinFunction(attachNetStream),NORMAL_METHOD,true);
 }
 ASFUNCTIONBODY_GETTER_NOT_IMPLEMENTED(VideoTexture,videoHeight)
 ASFUNCTIONBODY_GETTER_NOT_IMPLEMENTED(VideoTexture,videoWidth)

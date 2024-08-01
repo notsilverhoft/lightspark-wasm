@@ -36,12 +36,14 @@
 #include "scripting/flash/display/BitmapData.h"
 #include "scripting/flash/display/RootMovieClip.h"
 #include "scripting/flash/geom/flashgeom.h"
-#include "scripting/toplevel/toplevel.h"
+#include "scripting/toplevel/Array.h"
 #include "scripting/toplevel/ASQName.h"
 #include "scripting/toplevel/Number.h"
+#include "scripting/toplevel/Null.h"
 #include "scripting/toplevel/Boolean.h"
 #include "scripting/toplevel/Integer.h"
 #include "scripting/toplevel/UInteger.h"
+#include "scripting/toplevel/Undefined.h"
 #include "parsing/tags.h"
 
 
@@ -435,6 +437,44 @@ bool MATRIX::isInvertible() const
 {
 	const number_t den=xx*yy-yx*xy;
 	return (fabs(den) > 1e-6);
+}
+
+// algorithm for scale and rotation getters taken from https://math.stackexchange.com/questions/13150/extracting-rotation-scale-values-from-2d-transformation-matrix
+// this handles negative scales properly
+number_t MATRIX::getScaleX() const
+{
+	number_t ret = 0;
+	if (xx != 0 || yx != 0)
+		ret = sqrt(xx * xx + yx * yx);
+	else if (xy != 0 || yy != 0)
+		ret = (xx * yy - yx * xy) / sqrt(xy * xy + yy * yy);
+	return ret;
+}
+
+number_t MATRIX::getScaleY() const
+{
+	number_t ret = 0;
+	if (xx != 0 || yx != 0)
+		ret = (xx * yy - yx * xy) / sqrt(xx * xx + yx * yx);
+	else if (xy != 0 || yy != 0)
+		ret = sqrt(xy * xy + yy * yy);
+	return ret;
+}
+
+number_t MATRIX::getRotation() const
+{
+	number_t ret = 0;
+	if (xx != 0 || yx != 0)
+	{
+		ret = sqrt(xx * xx + yx * yx);
+		ret = yx > 0 ? acos(xx / ret) : -acos(xx / ret);
+	}
+	else if (xy != 0 || yy != 0)
+	{
+		ret = sqrt(xy * xy + yy * yy);
+		ret = M_PI / 2.0 - (yy > 0 ? acos(-xy / ret) : -acos(xy / ret));
+	}
+	return ret*180/M_PI;
 }
 
 void MATRIX::get4DMatrix(float matrix[16]) const
@@ -853,8 +893,7 @@ std::istream& lightspark::operator>>(std::istream& s, FOCALGRADIENT& v)
 		v.GradientRecords.push_back(gr);
 	}
 	sort(v.GradientRecords.begin(),v.GradientRecords.end());
-	//TODO: support FocalPoint
-	s.read((char*)&v.FocalPoint,2);
+	s >> v.FocalPoint;
 	return s;
 }
 
@@ -890,6 +929,7 @@ std::istream& lightspark::operator>>(std::istream& s, FILLSTYLE& v)
 			s >> v.FocalGradient;
 		else
 			s >> v.Gradient;
+		v.bitmap = _MNR(new BitmapContainer(nullptr)); // for caching the nanoVG gradient
 	}
 	else if(v.FillStyleType==REPEATING_BITMAP || v.FillStyleType==CLIPPED_BITMAP || v.FillStyleType==NON_SMOOTHED_REPEATING_BITMAP || 
 			v.FillStyleType==NON_SMOOTHED_CLIPPED_BITMAP)
@@ -1457,8 +1497,6 @@ std::istream& lightspark::operator>>(std::istream& s, CLIPEVENTFLAGS& v)
 		LOG(LOG_NOT_IMPLEMENTED,"CLIPEVENTFLAG ClipEventDragOver not handled");
 	if (v.ClipEventData)
 		LOG(LOG_NOT_IMPLEMENTED,"CLIPEVENTFLAG ClipEventData not handled");
-	if (v.ClipEventKeyPress)
-		LOG(LOG_NOT_IMPLEMENTED,"CLIPEVENTFLAG ClipEventKeyPress not handled");
 	if (v.ClipEventDragOut)
 		LOG(LOG_NOT_IMPLEMENTED,"CLIPEVENTFLAG ClipEventDragOut not handled");
 	return s;

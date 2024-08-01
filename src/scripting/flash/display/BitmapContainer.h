@@ -28,11 +28,12 @@
 #include <vector>
 #include "backends/graphics.h"
 #include "threading.h"
+#include "3rdparty/nanovg/src/nanovg.h"
 
 namespace lightspark
 {
 class BitmapFilter;
-class BitmapContainer : public RefCountable, public ITextureUploadable
+class BitmapContainer : public RefCountable
 {
 public:
 	enum BITMAP_FORMAT { RGB15, RGB24, RGB32, ARGB32 };
@@ -49,17 +50,19 @@ protected:
 	// color transformation values currently applied to data_colortransformed
 	ColorTransformBase currentcolortransform;
 	uint32_t *getDataNoBoundsChecking(int32_t x, int32_t y) const;
-	void resetColorTransform();
+	uint8_t* getCurrentData() const;
 public:
 	Semaphore renderevent;
 	TextureChunk bitmaptexture;
 	int nanoVGImageHandle;
 	cairo_pattern_t* cachedCairoPattern;
+	NVGpaint nanoVGGradientPattern;
 	BitmapContainer(MemoryAccount* m);
 	~BitmapContainer();
 	uint32_t getDataSize() const { return data.size(); }
-	uint8_t* getData() { return &data[0]; }
-	const uint8_t* getData() const { return &data[0]; }
+	uint8_t* getData() { return getCurrentData(); }
+	const uint8_t* getData() const { return getCurrentData(); }
+	uint8_t* getOriginalData() { return &data[0]; }
 	uint8_t* getDataColorTransformed() 
 	{
 		data_colortransformed.reserve(data.size());
@@ -107,13 +110,8 @@ public:
 	bool isEmpty() const { return data.empty(); }
 	void clear();
 
-	//ITextureUploadable interface
-	void sizeNeeded(uint32_t& w, uint32_t& h) const override { w=width; h=height; }
-	uint8_t* upload(bool refresh) override;
-	TextureChunk& getTexture() override;
-	void uploadFence() override;
-
-	bool checkTexture();
+	bool checkTextureForUpload(SystemState* sys);
+	void clone(BitmapContainer* c);
 };
 
 }

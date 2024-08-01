@@ -261,6 +261,7 @@ struct GLNVGcontext {
 	int npaths;
 	struct NVGclipPath* clips;
 	struct NVGclipPath* lastClip;
+	int clipactive;
 	struct NVGvertex* verts;
 	int cverts;
 	int nverts;
@@ -1115,7 +1116,7 @@ static void glnvg__stencilClipCoverage(GLNVGcontext* gl, GLNVGcall* call)
 static void glnvg__stencilClipPaths(GLNVGcontext* gl, GLNVGcall* call)
 {
 	int i, j;
-	int hasClipStack = (gl->clips != NULL && gl->lastClip != NULL);
+	int hasClipStack = (gl->clipactive && gl->clips != NULL && gl->lastClip != NULL);
 	glnvg__stencilMask(gl, 0x7f);
 	glnvg__stencilFunc(gl, GL_ALWAYS, 0x00, 0xff);
 	glnvg__setUniforms(gl, call->uniformOffset, 0);
@@ -1169,7 +1170,7 @@ static void glnvg__fill(GLNVGcontext* gl, GLNVGcall* call)
 	GLNVGpath* paths = &gl->paths[call->pathOffset];
 	int i, npaths = call->pathCount;
 
-	int hasClipStack = (gl->clips != NULL && gl->lastClip != NULL);
+	int hasClipStack = (gl->clipactive && gl->clips != NULL && gl->lastClip != NULL);
 	int hasClipPaths = (call->clipCount > 0 || hasClipStack);
 
 	if (npaths <= 0) return;
@@ -1227,7 +1228,7 @@ static void glnvg__convexFill(GLNVGcontext* gl, GLNVGcall* call)
 	GLNVGpath* paths = &gl->paths[call->pathOffset];
 	int i, npaths = call->pathCount;
 
-	int hasClipStack = (gl->clips != NULL && gl->lastClip != NULL);
+	int hasClipStack = (gl->clipactive && gl->clips != NULL && gl->lastClip != NULL);
 	int hasClipPaths = (call->clipCount > 0 || hasClipStack);
 
 	if (npaths <= 0) return;
@@ -1266,7 +1267,7 @@ static void glnvg__stroke(GLNVGcontext* gl, GLNVGcall* call)
 	GLNVGpath* paths = &gl->paths[call->pathOffset];
 	int npaths = call->pathCount, i;
 
-	int hasClipStack = (gl->clips != NULL && gl->lastClip != NULL);
+	int hasClipStack = (gl->clipactive && gl->clips != NULL && gl->lastClip != NULL);
 	int hasClipPaths = (call->clipCount > 0 || hasClipStack);
 
 	if (npaths <= 0) return;
@@ -1280,7 +1281,7 @@ static void glnvg__stroke(GLNVGcontext* gl, GLNVGcall* call)
 		glnvg__stencilClipPaths(gl, call);
 		glnvg__stencilFunc(gl, GL_EQUAL, 0x80, 0xff);
 		glStencilOp(GL_ZERO, GL_ZERO, GL_ZERO);
-
+		
 		glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
 		glnvg__setUniforms(gl, call->uniformOffset + gl->fragSize, call->image);
 	} else {
@@ -1418,7 +1419,7 @@ static void glnvg__renderFlush(void* uptr)
 		for (i = 0; i < gl->ncalls; i++) {
 			GLNVGcall* call = &gl->calls[i];
 			glnvg__blendFuncSeparate(gl,&call->blendFunc);
-			GLNVGfragUniforms* frag = nvg__fragUniformPtr(gl, call->uniformOffset);
+			//GLNVGfragUniforms* frag = nvg__fragUniformPtr(gl, call->uniformOffset);
 			if (call->type == GLNVG_FILL)
 				glnvg__fill(gl, call);
 			else if (call->type == GLNVG_CONVEXFILL)
@@ -1427,8 +1428,10 @@ static void glnvg__renderFlush(void* uptr)
 				glnvg__stroke(gl, call);
 			else if (call->type == GLNVG_TRIANGLES)
 				glnvg__triangles(gl, call);
-			if (frag->type == NSVG_SHADER_FILLGRADIMG)
-				glnvg__deleteTexture(gl, call->image);
+			// TODO we delete the texture in the gradient cache of the BitmapContainer of the corresponding fillStyle
+			// it would probably be better to avoid creating these textures and compute the gradient in the shader
+			// if (frag->type == NSVG_SHADER_FILLGRADIMG)
+			// 	glnvg__deleteTexture(gl, call->image);
 		}
 
 		glDisableVertexAttribArray(0);
@@ -1594,6 +1597,12 @@ static void glnvg__setLastClip(void* uptr, NVGclipPath* last)
 	gl->lastClip = last;
 }
 
+static void glnvg__setClipActive(void* uptr, int active)
+{
+	GLNVGcontext* gl = (GLNVGcontext*)uptr;
+	gl->clipactive = active;
+}
+
 static void glnvg__renderFill(void* uptr, NVGpaint* paint, NVGcompositeOperationState compositeOperation, NVGscissor* scissor, float fringe,
 							  const float* bounds, const NVGpath* clipPaths, int nclipPaths, const NVGpath* paths, int npaths)
 {
@@ -1602,7 +1611,7 @@ static void glnvg__renderFill(void* uptr, NVGpaint* paint, NVGcompositeOperation
 	NVGvertex* quad;
 	GLNVGfragUniforms* frag;
 	int i, j, maxverts, maxclipverts, offset, clipOffset, clipPathOffset;
-	int hasClipPaths = (clipPaths != NULL && nclipPaths > 0);
+	int hasClipPaths = (gl->clipactive && clipPaths != NULL && nclipPaths > 0);
 	int hasClipStack = (gl->clips != NULL && gl->lastClip != NULL);
 
 	if (call == NULL) return;
@@ -1734,7 +1743,7 @@ static void glnvg__renderStroke(void* uptr, NVGpaint* paint, NVGcompositeOperati
 	GLNVGcall* call = glnvg__allocCall(gl);
 	NVGvertex* quad;
 	int i, j, maxverts, maxclipverts, offset, clipOffset, clipPathOffset;
-	int hasClipPaths = (clipPaths != NULL && nclipPaths > 0);
+	int hasClipPaths = (gl->clipactive && clipPaths != NULL && nclipPaths > 0);
 	int hasClipStack = (gl->clips != NULL && gl->lastClip != NULL);
 
 	if (call == NULL) return;
@@ -1932,6 +1941,7 @@ NVGcontext* nvgCreateGLES3(int flags)
 	params.renderDelete = glnvg__renderDelete;
 	params.setClip = glnvg__setClip;
 	params.setLastClip = glnvg__setLastClip;
+	params.setClipActive = glnvg__setClipActive;
 	params.userPtr = gl;
 	params.edgeAntiAlias = flags & NVG_ANTIALIAS ? 1 : 0;
 

@@ -393,6 +393,7 @@ void nvgBeginFrame(NVGcontext* ctx, float windowWidth, float windowHeight, float
 
 	nvg__setDevicePixelRatio(ctx, devicePixelRatio);
 
+	ctx->params.setClipActive(ctx->params.userPtr,1);
 	ctx->params.renderViewport(ctx->params.userPtr, windowWidth, windowHeight, devicePixelRatio);
 
 	ctx->drawCallCount = 0;
@@ -1236,6 +1237,7 @@ void nvgPushClip(NVGcontext* ctx)
 		ctx->params.setClip(ctx->params.userPtr, ctx->clipPaths);
 	if (hasClips >= 0)
 		ctx->params.setLastClip(ctx->params.userPtr, ctx->lastClip);
+	ctx->params.setClipActive(ctx->params.userPtr,1);
 }
 
 void nvgPopClip(NVGcontext* ctx)
@@ -1258,6 +1260,10 @@ void nvgEndClip(NVGcontext* ctx)
 {
 	float vals[] = { NVG_ENDCLIP };
 	nvg__appendCommands(ctx, vals, NVG_COUNTOF(vals));
+}
+void nvgDeactivateClipping(NVGcontext* ctx)
+{
+	ctx->params.setClipActive(ctx->params.userPtr,0);
 }
 
 // Scissoring
@@ -2629,6 +2635,16 @@ void nvgStroke(NVGcontext* ctx)
 	} else {
 		i = 0;
 	}
+	// ensure we render anything if stroke is only a singular horizontal or vertical line
+	if (ctx->cache->bounds[0] == ctx->cache->bounds[2] ||
+		ctx->cache->bounds[1] == ctx->cache->bounds[3])
+	{
+		ctx->cache->bounds[0]-=strokeWidth/2.0;
+		ctx->cache->bounds[1]-=strokeWidth/2.0;
+		ctx->cache->bounds[2]+=strokeWidth/2.0;
+		ctx->cache->bounds[3]+=strokeWidth/2.0;
+	}
+
 	ctx->params.renderStroke(ctx->params.userPtr, &strokePaint, state->compositeOperation, &state->scissor, ctx->fringeWidth,
 							 strokeWidth, ctx->cache->bounds, clipPath, i, ctx->cache->paths, ctx->cache->npaths);
 

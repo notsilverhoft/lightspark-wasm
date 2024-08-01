@@ -31,11 +31,15 @@
 #include "scripting/flash/display/Loader.h"
 #include "scripting/flash/display/LoaderInfo.h"
 #include "scripting/flash/display/RootMovieClip.h"
+#include "scripting/flash/display/Stage.h"
 #include "scripting/flash/geom/Rectangle.h"
+#include "scripting/toplevel/toplevel.h"
 #include "scripting/toplevel/ASString.h"
+#include "scripting/toplevel/Null.h"
 #include "scripting/toplevel/Number.h"
 #include "scripting/toplevel/Boolean.h"
 #include "scripting/toplevel/Vector.h"
+#include "scripting/toplevel/Undefined.h"
 #include "scripting/avm1/avm1display.h"
 #include "logger.h"
 #include "parsing/streams.h"
@@ -53,6 +57,7 @@
 #include "backends/currency.h"
 #include "memory_support.h"
 #include "parsing/tags.h"
+#include "scripting/flash/external/ExtensionContext.h"
 
 #ifdef ENABLE_CURL
 #include <curl/curl.h>
@@ -200,7 +205,7 @@ SystemState::SystemState(uint32_t fileSize, FLASH_MODE mode):
 	vmVersion(VMNONE),childPid(0),
 	parameters(NullRef),
 	invalidateQueueHead(NullRef),invalidateQueueTail(NullRef),lastUsedStringId(0),lastUsedNamespaceId(0x7fffffff),framePhase(FramePhase::IDLE),
-	showProfilingData(false),allowFullscreen(false),flashMode(mode),swffilesize(fileSize),avm1global(nullptr),
+	showProfilingData(false),allowFullscreen(false),flashMode(mode),swffilesize(fileSize),instanceCounter(0),avm1global(nullptr),
 	currentVm(nullptr),builtinClasses(nullptr),useInterpreter(true),useFastInterpreter(false),useJit(false),ignoreUnhandledExceptions(false),exitOnError(ERROR_NONE),
 	systemDomain(nullptr),worker(nullptr),workerDomain(nullptr),singleworker(true),
 	downloadManager(nullptr),extScriptObject(nullptr),scaleMode(SHOW_ALL),unaccountedMemory(nullptr),tagsMemory(nullptr),stringMemory(nullptr),textTokenMemory(nullptr),shapeTokenMemory(nullptr),morphShapeTokenMemory(nullptr),bitmapTokenMemory(nullptr),spriteTokenMemory(nullptr),
@@ -613,9 +618,19 @@ void SystemState::systemFinalize()
 }
 #ifndef NDEBUG
 extern std::set<ASObject*> memcheckset;
+extern asAtom logAtom;
+#endif
+#ifdef PROFILING_SUPPORT
+extern void dumpFunctionCallCount(bool builtinonly = false,uint32_t mincallcount=0, uint32_t mincallduration=0, uint64_t minaverageduration=0);
 #endif
 SystemState::~SystemState()
 {
+#ifndef NDEBUG
+	logAtom = asAtomHandler::invalidAtom;
+#endif
+#ifdef PROFILING_SUPPORT
+	dumpFunctionCallCount();
+#endif
 	// finalize main worker
 	worker->finalize();
 	workerDomain->finalize();
@@ -1902,6 +1917,7 @@ void ParseThread::parseExtensions(RootMovieClip* root)
 	for (auto it = extensions.begin(); it != extensions.end(); it++)
 	{
 		LOG(LOG_INFO,"loading extension:"<<(*it));
+		ExtensionContext::registerExtension(*it);
 		lsfilereader r((*it).raw_buf());
 		istream fext(&r);
 		UI8 Signature[4];
@@ -2515,5 +2531,10 @@ void SystemState::removeFromResetParentList(DisplayObject* d)
 		}
 		it++;
 	}
+}
+
+ASObject* SystemState::getBuiltinFunction(as_atom_function v, int len, Class_base* returnType, Class_base* returnTypeAllArgsInt)
+{
+	return Class<IFunction>::getFunction(this,v,len,returnType, returnTypeAllArgsInt);
 }
 

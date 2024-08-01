@@ -130,6 +130,7 @@ REGISTER_CLASS_NAME(StageQuality,"flash.display")
 REGISTER_CLASS_NAME(SWFVersion,"flash.display")
 REGISTER_CLASS_NAME(TriangleCulling,"flash.display")
 REGISTER_CLASS_NAME(NativeWindow,"flash.display")
+REGISTER_CLASS_NAME(StageAspectRatio,"flash.display")
 
 //Display3D
 REGISTER_CLASS_NAME(Context3D,"flash.display3D")
@@ -471,3 +472,4 @@ REGISTER_CLASS_NAME2(AVM1NetConnection,"NetConnection","")
 REGISTER_CLASS_NAME2(AVM1XMLSocket,"XMLSocket","")
 REGISTER_CLASS_NAME2(AVM1ContextMenuItem,"ContextMenuItem","")
 REGISTER_CLASS_NAME2(AVM1NetStream,"NetStream","")
+REGISTER_CLASS_NAME2(AVM1Array,"Array","")

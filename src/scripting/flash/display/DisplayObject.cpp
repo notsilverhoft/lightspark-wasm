@@ -33,7 +33,7 @@
 #include "scripting/flash/display/Bitmap.h"
 #include "scripting/flash/display/BitmapData.h"
 #include "scripting/flash/display/LoaderInfo.h"
-#include "scripting/flash/display/flashdisplay.h"
+#include "scripting/flash/display/Stage.h"
 #include "scripting/flash/display/RootMovieClip.h"
 #include "scripting/flash/geom/flashgeom.h"
 #include "scripting/flash/filters/flashfilters.h"
@@ -46,6 +46,8 @@
 #include "scripting/flash/filters/GlowFilter.h"
 #include "scripting/flash/filters/GradientBevelFilter.h"
 #include "scripting/flash/filters/GradientGlowFilter.h"
+#include "scripting/toplevel/AVM1Function.h"
+#include "scripting/toplevel/Array.h"
 #include "scripting/toplevel/Global.h"
 #include "scripting/toplevel/Number.h"
 #include <algorithm>
@@ -91,39 +93,6 @@ bool DisplayObject::getBounds(number_t& xmin, number_t& xmax, number_t& ymin, nu
 	return ret;
 }
 
-RectF DisplayObject::boundsRectWithRenderTransform(const MATRIX& matrix, bool includeOwnFilters, const MATRIX& initialMatrix)
-{
-	RectF bounds;
-	boundsRectWithoutChildren(bounds.min.x, bounds.max.x, bounds.min.y, bounds.max.y, false);
-	bounds *= matrix;
-	if (is<DisplayObjectContainer>())
-	{
-		std::vector<_R<DisplayObject>> list;
-		as<DisplayObjectContainer>()->cloneDisplayList(list);
-		for (auto child : list)
-		{
-			MATRIX m = matrix.multiplyMatrix(child->getMatrix());
-			bounds = bounds._union(child->boundsRectWithRenderTransform(m, true, initialMatrix));
-		}
-	}
-	if (includeOwnFilters && !filters.isNull())
-	{
-		number_t filterborder = 0;
-		for (uint32_t i = 0; i < filters->size(); i++)
-		{
-			asAtom f = asAtomHandler::invalidAtom;
-			filters->at_nocheck(f,i);
-			if (asAtomHandler::is<BitmapFilter>(f))
-				filterborder = max(filterborder,asAtomHandler::as<BitmapFilter>(f)->getMaxFilterBorder());
-		}
-		bounds.min.x -= filterborder*initialMatrix.getScaleX();
-		bounds.max.x += filterborder*initialMatrix.getScaleX();
-		bounds.min.y -= filterborder*initialMatrix.getScaleY();
-		bounds.max.y += filterborder*initialMatrix.getScaleY();
-	}
-	return bounds;
-}
-
 number_t DisplayObject::getNominalWidth()
 {
 	number_t xmin, xmax, ymin, ymax;
@@ -148,7 +117,7 @@ number_t DisplayObject::getNominalHeight()
 
 bool DisplayObject::inMask() const
 {
-	if (mask.getPtr() || this->getClipDepth())
+	if (mask || this->getClipDepth())
 		return true;
 	if (parent)
 		return parent->inMask();
@@ -163,15 +132,17 @@ bool DisplayObject::belongsToMask() const
 	return false;
 }
 
-DisplayObject::DisplayObject(ASWorker* wrk, Class_base* c):EventDispatcher(wrk,c),tx(0),ty(0),rotation(0),
-	sx(1),sy(1),alpha(1.0),blendMode(BLENDMODE_NORMAL),isLoadedRoot(false),ismask(false),maxfilterborder(0),ClipDepth(0),
+DisplayObject::DisplayObject(ASWorker* wrk, Class_base* c):EventDispatcher(wrk,c),matrix(Class<Matrix>::getInstanceS(wrk)),tx(0),ty(0),rotation(0),
+	sx(1),sy(1),alpha(1.0),blendMode(BLENDMODE_NORMAL),isLoadedRoot(false),ismask(false),filterlistHasChanged(false),maxfilterborder(0),ClipDepth(0),
 	avm1PrevDisplayObject(nullptr),avm1NextDisplayObject(nullptr),parent(nullptr),cachedSurface(new CachedSurface()),
 	constructed(false),useLegacyMatrix(true),
 	needsTextureRecalculation(true),textureRecalculationSkippable(false),
 	avm1mouselistenercount(0),avm1framelistenercount(0),
 	onStage(false),visible(true),
-	mask(),invalidateQueueNext(),loaderInfo(),loadedFrom(wrk->rootClip.getPtr()),hasChanged(true),legacy(false),placeFrame(UINT32_MAX),markedForLegacyDeletion(false),cacheAsBitmap(false),placedByActionScript(false),skipFrame(false),
-	name(BUILTIN_STRINGS::EMPTY)
+	mask(nullptr),maskee(nullptr),clipMask(nullptr),
+	invalidateQueueNext(),loaderInfo(),loadedFrom(wrk->rootClip.getPtr()),hasChanged(true),legacy(false),placeFrame(UINT32_MAX),markedForLegacyDeletion(false),cacheAsBitmap(false),placedByActionScript(false),skipFrame(false),
+	name(BUILTIN_STRINGS::EMPTY),
+	opaqueBackground(asAtomHandler::nullAtom)
 {
 	subtype=SUBTYPE_DISPLAYOBJECT;
 }
@@ -196,7 +167,15 @@ void DisplayObject::finalize()
 	EventDispatcher::finalize();
 	parent=nullptr;
 	eventparentmap.clear();
-	mask.reset();
+	if (mask)
+		mask->removeStoredMember();
+	mask=nullptr;
+	if (maskee)
+		maskee->removeStoredMember();
+	maskee=nullptr;
+	if (clipMask)
+		clipMask->removeStoredMember();
+	clipMask=nullptr;
 	matrix.reset();
 	loaderInfo.reset();
 	colorTransform.reset();
@@ -210,6 +189,11 @@ void DisplayObject::finalize()
 			o->removeStoredMember();
 	}
 	avm1variables.clear();
+	for (auto it = avm1locals.begin(); it != avm1locals.end(); it++)
+	{
+		ASATOM_REMOVESTOREDMEMBER(it->second);
+	}
+	avm1locals.clear();
 	variablebindings.clear();
 	loadedFrom=getSystemState()->mainClip;
 	hasChanged = true;
@@ -225,10 +209,19 @@ bool DisplayObject::destruct()
 	getSystemState()->stage->AVM1RemoveDisplayObject(this);
 	removeAVM1Listeners();
 	ismask=false;
+	filterlistHasChanged=false;
 	maxfilterborder=0;
 	parent=nullptr;
 	eventparentmap.clear();
-	mask.reset();
+	if (mask)
+		mask->removeStoredMember();
+	mask=nullptr;
+	if (maskee)
+		maskee->removeStoredMember();
+	maskee=nullptr;
+	if (clipMask)
+		clipMask->removeStoredMember();
+	clipMask=nullptr;
 	matrix.reset();
 	loaderInfo.reset();
 	invalidateQueueNext.reset();
@@ -266,6 +259,11 @@ bool DisplayObject::destruct()
 			o->removeStoredMember();
 	}
 	avm1variables.clear();
+	for (auto it = avm1locals.begin(); it != avm1locals.end(); it++)
+	{
+		ASATOM_REMOVESTOREDMEMBER(it->second);
+	}
+	avm1locals.clear();
 	variablebindings.clear();
 	placeFrame=UINT32_MAX;
 	return EventDispatcher::destruct();
@@ -279,6 +277,8 @@ void DisplayObject::prepareShutdown()
 
 	if (mask)
 		mask->prepareShutdown();
+	if (maskee)
+		maskee->prepareShutdown();
 	if (matrix)
 		matrix->prepareShutdown();;
 	if (loaderInfo)
@@ -301,6 +301,12 @@ void DisplayObject::prepareShutdown()
 		if (o)
 			o->prepareShutdown();
 	}
+	for (auto it = avm1locals.begin(); it != avm1locals.end(); it++)
+	{
+		ASObject* o = asAtomHandler::getObject(it->second);
+		if (o)
+			o->prepareShutdown();
+	}
 	setParent(nullptr);
 }
 
@@ -315,55 +321,67 @@ bool DisplayObject::countCylicMemberReferences(garbagecollectorstate& gcstate)
 		if (o)
 			ret = o->countAllCylicMemberReferences(gcstate) || ret;
 	}
+	for (auto it = avm1locals.begin(); it != avm1locals.end(); it++)
+	{
+		ASObject* o = asAtomHandler::getObject(it->second);
+		if (o)
+			ret = o->countAllCylicMemberReferences(gcstate) || ret;
+	}
+	if (mask)
+		ret = mask->countAllCylicMemberReferences(gcstate) || ret;
+	if (maskee)
+		ret = maskee->countAllCylicMemberReferences(gcstate) || ret;
+	if (clipMask)
+		ret = clipMask->countAllCylicMemberReferences(gcstate) || ret;
 	return ret;
 }
 
 void DisplayObject::sinit(Class_base* c)
 {
 	CLASS_SETUP(c, EventDispatcher, _constructorNotInstantiatable, CLASS_SEALED);
-	c->setDeclaredMethodByQName("loaderInfo","",Class<IFunction>::getFunction(c->getSystemState(),_getLoaderInfo,0,Class<LoaderInfo>::getRef(c->getSystemState()).getPtr()),GETTER_METHOD,true);
-	c->setDeclaredMethodByQName("width","",Class<IFunction>::getFunction(c->getSystemState(),_getWidth,0,Class<Number>::getRef(c->getSystemState()).getPtr()),GETTER_METHOD,true);
-	c->setDeclaredMethodByQName("width","",Class<IFunction>::getFunction(c->getSystemState(),_setWidth),SETTER_METHOD,true);
-	c->setDeclaredMethodByQName("scaleX","",Class<IFunction>::getFunction(c->getSystemState(),_getScaleX,0,Class<Number>::getRef(c->getSystemState()).getPtr()),GETTER_METHOD,true);
-	c->setDeclaredMethodByQName("scaleX","",Class<IFunction>::getFunction(c->getSystemState(),_setScaleX),SETTER_METHOD,true);
-	c->setDeclaredMethodByQName("scaleY","",Class<IFunction>::getFunction(c->getSystemState(),_getScaleY,0,Class<Number>::getRef(c->getSystemState()).getPtr()),GETTER_METHOD,true);
-	c->setDeclaredMethodByQName("scaleY","",Class<IFunction>::getFunction(c->getSystemState(),_setScaleY),SETTER_METHOD,true);
-	c->setDeclaredMethodByQName("scaleZ","",Class<IFunction>::getFunction(c->getSystemState(),_getScaleZ,0,Class<Number>::getRef(c->getSystemState()).getPtr()),GETTER_METHOD,true);
-	c->setDeclaredMethodByQName("scaleZ","",Class<IFunction>::getFunction(c->getSystemState(),_setScaleZ),SETTER_METHOD,true);
-	c->setDeclaredMethodByQName("x","",Class<IFunction>::getFunction(c->getSystemState(),_getX,0,Class<Number>::getRef(c->getSystemState()).getPtr()),GETTER_METHOD,true);
-	c->setDeclaredMethodByQName("x","",Class<IFunction>::getFunction(c->getSystemState(),_setX),SETTER_METHOD,true);
-	c->setDeclaredMethodByQName("y","",Class<IFunction>::getFunction(c->getSystemState(),_getY,0,Class<Number>::getRef(c->getSystemState()).getPtr()),GETTER_METHOD,true);
-	c->setDeclaredMethodByQName("y","",Class<IFunction>::getFunction(c->getSystemState(),_setY),SETTER_METHOD,true);
-	c->setDeclaredMethodByQName("z","",Class<IFunction>::getFunction(c->getSystemState(),_getZ,0,Class<Number>::getRef(c->getSystemState()).getPtr()),GETTER_METHOD,true);
-	c->setDeclaredMethodByQName("z","",Class<IFunction>::getFunction(c->getSystemState(),_setZ),SETTER_METHOD,true);
-	c->setDeclaredMethodByQName("height","",Class<IFunction>::getFunction(c->getSystemState(),_getHeight,0,Class<Number>::getRef(c->getSystemState()).getPtr()),GETTER_METHOD,true);
-	c->setDeclaredMethodByQName("height","",Class<IFunction>::getFunction(c->getSystemState(),_setHeight),SETTER_METHOD,true);
-	c->setDeclaredMethodByQName("visible","",Class<IFunction>::getFunction(c->getSystemState(),_getVisible,0,Class<Boolean>::getRef(c->getSystemState()).getPtr()),GETTER_METHOD,true);
-	c->setDeclaredMethodByQName("visible","",Class<IFunction>::getFunction(c->getSystemState(),_setVisible),SETTER_METHOD,true);
-	c->setDeclaredMethodByQName("rotation","",Class<IFunction>::getFunction(c->getSystemState(),_getRotation,0,Class<Number>::getRef(c->getSystemState()).getPtr()),GETTER_METHOD,true);
-	c->setDeclaredMethodByQName("rotation","",Class<IFunction>::getFunction(c->getSystemState(),_setRotation),SETTER_METHOD,true);
+	c->setDeclaredMethodByQName("loaderInfo","",c->getSystemState()->getBuiltinFunction(_getLoaderInfo,0,Class<LoaderInfo>::getRef(c->getSystemState()).getPtr()),GETTER_METHOD,true);
+	c->setDeclaredMethodByQName("width","",c->getSystemState()->getBuiltinFunction(_getWidth,0,Class<Number>::getRef(c->getSystemState()).getPtr()),GETTER_METHOD,true);
+	c->setDeclaredMethodByQName("width","",c->getSystemState()->getBuiltinFunction(_setWidth),SETTER_METHOD,true);
+	c->setDeclaredMethodByQName("scaleX","",c->getSystemState()->getBuiltinFunction(_getScaleX,0,Class<Number>::getRef(c->getSystemState()).getPtr()),GETTER_METHOD,true);
+	c->setDeclaredMethodByQName("scaleX","",c->getSystemState()->getBuiltinFunction(_setScaleX),SETTER_METHOD,true);
+	c->setDeclaredMethodByQName("scaleY","",c->getSystemState()->getBuiltinFunction(_getScaleY,0,Class<Number>::getRef(c->getSystemState()).getPtr()),GETTER_METHOD,true);
+	c->setDeclaredMethodByQName("scaleY","",c->getSystemState()->getBuiltinFunction(_setScaleY),SETTER_METHOD,true);
+	c->setDeclaredMethodByQName("scaleZ","",c->getSystemState()->getBuiltinFunction(_getScaleZ,0,Class<Number>::getRef(c->getSystemState()).getPtr()),GETTER_METHOD,true);
+	c->setDeclaredMethodByQName("scaleZ","",c->getSystemState()->getBuiltinFunction(_setScaleZ),SETTER_METHOD,true);
+	c->setDeclaredMethodByQName("x","",c->getSystemState()->getBuiltinFunction(_getX,0,Class<Number>::getRef(c->getSystemState()).getPtr()),GETTER_METHOD,true);
+	c->setDeclaredMethodByQName("x","",c->getSystemState()->getBuiltinFunction(_setX),SETTER_METHOD,true);
+	c->setDeclaredMethodByQName("y","",c->getSystemState()->getBuiltinFunction(_getY,0,Class<Number>::getRef(c->getSystemState()).getPtr()),GETTER_METHOD,true);
+	c->setDeclaredMethodByQName("y","",c->getSystemState()->getBuiltinFunction(_setY),SETTER_METHOD,true);
+	c->setDeclaredMethodByQName("z","",c->getSystemState()->getBuiltinFunction(_getZ,0,Class<Number>::getRef(c->getSystemState()).getPtr()),GETTER_METHOD,true);
+	c->setDeclaredMethodByQName("z","",c->getSystemState()->getBuiltinFunction(_setZ),SETTER_METHOD,true);
+	c->setDeclaredMethodByQName("height","",c->getSystemState()->getBuiltinFunction(_getHeight,0,Class<Number>::getRef(c->getSystemState()).getPtr()),GETTER_METHOD,true);
+	c->setDeclaredMethodByQName("height","",c->getSystemState()->getBuiltinFunction(_setHeight),SETTER_METHOD,true);
+	c->setDeclaredMethodByQName("visible","",c->getSystemState()->getBuiltinFunction(_getVisible,0,Class<Boolean>::getRef(c->getSystemState()).getPtr()),GETTER_METHOD,true);
+	c->setDeclaredMethodByQName("visible","",c->getSystemState()->getBuiltinFunction(_setVisible),SETTER_METHOD,true);
+	c->setDeclaredMethodByQName("rotation","",c->getSystemState()->getBuiltinFunction(_getRotation,0,Class<Number>::getRef(c->getSystemState()).getPtr()),GETTER_METHOD,true);
+	c->setDeclaredMethodByQName("rotation","",c->getSystemState()->getBuiltinFunction(_setRotation),SETTER_METHOD,true);
 	REGISTER_GETTER_SETTER_RESULTTYPE(c,name,ASString);
-	c->setDeclaredMethodByQName("parent","",Class<IFunction>::getFunction(c->getSystemState(),_getParent,0,Class<DisplayObject>::getRef(c->getSystemState()).getPtr()),GETTER_METHOD,true);
-	c->setDeclaredMethodByQName("root","",Class<IFunction>::getFunction(c->getSystemState(),_getRoot,0,Class<DisplayObject>::getRef(c->getSystemState()).getPtr()),GETTER_METHOD,true);
-	c->setDeclaredMethodByQName("blendMode","",Class<IFunction>::getFunction(c->getSystemState(),_getBlendMode,0,Class<ASString>::getRef(c->getSystemState()).getPtr()),GETTER_METHOD,true);
-	c->setDeclaredMethodByQName("blendMode","",Class<IFunction>::getFunction(c->getSystemState(),_setBlendMode),SETTER_METHOD,true);
-	c->setDeclaredMethodByQName("scale9Grid","",Class<IFunction>::getFunction(c->getSystemState(),_getScale9Grid,0,Class<Rectangle>::getRef(c->getSystemState()).getPtr()),GETTER_METHOD,true);
-	c->setDeclaredMethodByQName("scale9Grid","",Class<IFunction>::getFunction(c->getSystemState(),_setScale9Grid),SETTER_METHOD,true);
-	c->setDeclaredMethodByQName("stage","",Class<IFunction>::getFunction(c->getSystemState(),_getStage,0,Class<DisplayObject>::getRef(c->getSystemState()).getPtr()),GETTER_METHOD,true);
-	c->setDeclaredMethodByQName("mask","",Class<IFunction>::getFunction(c->getSystemState(),_getMask,0,Class<DisplayObject>::getRef(c->getSystemState()).getPtr()),GETTER_METHOD,true);
-	c->setDeclaredMethodByQName("mask","",Class<IFunction>::getFunction(c->getSystemState(),_setMask),SETTER_METHOD,true);
-	c->setDeclaredMethodByQName("alpha","",Class<IFunction>::getFunction(c->getSystemState(),_getAlpha,0,Class<Number>::getRef(c->getSystemState()).getPtr()),GETTER_METHOD,true);
-	c->setDeclaredMethodByQName("alpha","",Class<IFunction>::getFunction(c->getSystemState(),_setAlpha),SETTER_METHOD,true);
-	c->setDeclaredMethodByQName("getBounds","",Class<IFunction>::getFunction(c->getSystemState(),_getBounds,1,Class<Rectangle>::getRef(c->getSystemState()).getPtr()),NORMAL_METHOD,true);
-	c->setDeclaredMethodByQName("getRect","",Class<IFunction>::getFunction(c->getSystemState(),_getBounds,1,Class<Rectangle>::getRef(c->getSystemState()).getPtr()),NORMAL_METHOD,true);
-	c->setDeclaredMethodByQName("mouseX","",Class<IFunction>::getFunction(c->getSystemState(),_getMouseX,0,Class<Number>::getRef(c->getSystemState()).getPtr()),GETTER_METHOD,true);
-	c->setDeclaredMethodByQName("mouseY","",Class<IFunction>::getFunction(c->getSystemState(),_getMouseY,0,Class<Number>::getRef(c->getSystemState()).getPtr()),GETTER_METHOD,true);
-	c->setDeclaredMethodByQName("localToGlobal","",Class<IFunction>::getFunction(c->getSystemState(),localToGlobal,1,Class<Point>::getRef(c->getSystemState()).getPtr()),NORMAL_METHOD,true);
-	c->setDeclaredMethodByQName("globalToLocal","",Class<IFunction>::getFunction(c->getSystemState(),globalToLocal,1,Class<Point>::getRef(c->getSystemState()).getPtr()),NORMAL_METHOD,true);
-	c->setDeclaredMethodByQName("hitTestObject","",Class<IFunction>::getFunction(c->getSystemState(),hitTestObject,1,Class<Boolean>::getRef(c->getSystemState()).getPtr()),NORMAL_METHOD,true);
-	c->setDeclaredMethodByQName("hitTestPoint","",Class<IFunction>::getFunction(c->getSystemState(),hitTestPoint,2,Class<Boolean>::getRef(c->getSystemState()).getPtr()),NORMAL_METHOD,true);
-	c->setDeclaredMethodByQName("transform","",Class<IFunction>::getFunction(c->getSystemState(),_getTransform,0,Class<Transform>::getRef(c->getSystemState()).getPtr()),GETTER_METHOD,true);
-	c->setDeclaredMethodByQName("transform","",Class<IFunction>::getFunction(c->getSystemState(),_setTransform),SETTER_METHOD,true);
+	c->setDeclaredMethodByQName("parent","",c->getSystemState()->getBuiltinFunction(_getParent,0,Class<DisplayObject>::getRef(c->getSystemState()).getPtr()),GETTER_METHOD,true);
+	c->setDeclaredMethodByQName("root","",c->getSystemState()->getBuiltinFunction(_getRoot,0,Class<DisplayObject>::getRef(c->getSystemState()).getPtr()),GETTER_METHOD,true);
+	c->setDeclaredMethodByQName("blendMode","",c->getSystemState()->getBuiltinFunction(_getBlendMode,0,Class<ASString>::getRef(c->getSystemState()).getPtr()),GETTER_METHOD,true);
+	c->setDeclaredMethodByQName("blendMode","",c->getSystemState()->getBuiltinFunction(_setBlendMode),SETTER_METHOD,true);
+	c->setDeclaredMethodByQName("scale9Grid","",c->getSystemState()->getBuiltinFunction(_getScale9Grid,0,Class<Rectangle>::getRef(c->getSystemState()).getPtr()),GETTER_METHOD,true);
+	c->setDeclaredMethodByQName("scale9Grid","",c->getSystemState()->getBuiltinFunction(_setScale9Grid),SETTER_METHOD,true);
+	c->setDeclaredMethodByQName("stage","",c->getSystemState()->getBuiltinFunction(_getStage,0,Class<DisplayObject>::getRef(c->getSystemState()).getPtr()),GETTER_METHOD,true);
+	c->setDeclaredMethodByQName("mask","",c->getSystemState()->getBuiltinFunction(_getMask,0,Class<DisplayObject>::getRef(c->getSystemState()).getPtr()),GETTER_METHOD,true);
+	c->setDeclaredMethodByQName("mask","",c->getSystemState()->getBuiltinFunction(_setMask),SETTER_METHOD,true);
+	c->setDeclaredMethodByQName("alpha","",c->getSystemState()->getBuiltinFunction(_getAlpha,0,Class<Number>::getRef(c->getSystemState()).getPtr()),GETTER_METHOD,true);
+	c->setDeclaredMethodByQName("alpha","",c->getSystemState()->getBuiltinFunction(_setAlpha),SETTER_METHOD,true);
+	c->setDeclaredMethodByQName("getBounds","",c->getSystemState()->getBuiltinFunction(_getBounds,1,Class<Rectangle>::getRef(c->getSystemState()).getPtr()),NORMAL_METHOD,true);
+	c->setDeclaredMethodByQName("getRect","",c->getSystemState()->getBuiltinFunction(_getBounds,1,Class<Rectangle>::getRef(c->getSystemState()).getPtr()),NORMAL_METHOD,true);
+	c->setDeclaredMethodByQName("mouseX","",c->getSystemState()->getBuiltinFunction(_getMouseX,0,Class<Number>::getRef(c->getSystemState()).getPtr()),GETTER_METHOD,true);
+	c->setDeclaredMethodByQName("mouseY","",c->getSystemState()->getBuiltinFunction(_getMouseY,0,Class<Number>::getRef(c->getSystemState()).getPtr()),GETTER_METHOD,true);
+	c->setDeclaredMethodByQName("localToGlobal","",c->getSystemState()->getBuiltinFunction(localToGlobal,1,Class<Point>::getRef(c->getSystemState()).getPtr()),NORMAL_METHOD,true);
+	c->setDeclaredMethodByQName("globalToLocal","",c->getSystemState()->getBuiltinFunction(globalToLocal,1,Class<Point>::getRef(c->getSystemState()).getPtr()),NORMAL_METHOD,true);
+	c->setDeclaredMethodByQName("hitTestObject","",c->getSystemState()->getBuiltinFunction(hitTestObject,1,Class<Boolean>::getRef(c->getSystemState()).getPtr()),NORMAL_METHOD,true);
+	c->setDeclaredMethodByQName("hitTestPoint","",c->getSystemState()->getBuiltinFunction(hitTestPoint,2,Class<Boolean>::getRef(c->getSystemState()).getPtr()),NORMAL_METHOD,true);
+	c->setDeclaredMethodByQName("transform","",c->getSystemState()->getBuiltinFunction(_getTransform,0,Class<Transform>::getRef(c->getSystemState()).getPtr()),GETTER_METHOD,true);
+	c->setDeclaredMethodByQName("transform","",c->getSystemState()->getBuiltinFunction(_setTransform),SETTER_METHOD,true);
 	REGISTER_GETTER_SETTER_RESULTTYPE(c,accessibilityProperties,AccessibilityProperties);
 	REGISTER_GETTER_SETTER_RESULTTYPE(c,cacheAsBitmap,Boolean);
 	REGISTER_GETTER_SETTER_RESULTTYPE(c,filters,Array);
@@ -382,7 +400,6 @@ ASFUNCTIONBODY_GETTER_SETTER(DisplayObject,accessibilityProperties)
 ASFUNCTIONBODY_GETTER_SETTER_CB(DisplayObject,scrollRect,onSetScrollRect)
 ASFUNCTIONBODY_GETTER_SETTER_NOT_IMPLEMENTED(DisplayObject, rotationX)
 ASFUNCTIONBODY_GETTER_SETTER_NOT_IMPLEMENTED(DisplayObject, rotationY)
-ASFUNCTIONBODY_GETTER_SETTER_NOT_IMPLEMENTED(DisplayObject, opaqueBackground)
 ASFUNCTIONBODY_GETTER_SETTER_NOT_IMPLEMENTED(DisplayObject, metaData)
 
 void DisplayObject::onSetName(uint32_t oldName)
@@ -392,33 +409,22 @@ void DisplayObject::onSetName(uint32_t oldName)
 		auto parent = getParent();
 		if (parent != nullptr)
 		{
-			bool set = false;
 			multiname m(nullptr);
 			m.name_type = multiname::NAME_STRING;
 			m.isAttribute = false;
 			m.name_s_id = name;
 
 			ASWorker* wrk = parent->getInstanceWorker();
-			variable* v = parent->findVariableByMultiname(m,parent->getClass(),nullptr,nullptr,true,wrk);
-			if (v != nullptr && asAtomHandler::is<DisplayObject>(v->var))
-			{
-				auto obj = asAtomHandler::as<DisplayObject>(v->var);
-				if (parent->findLegacyChildDepth(this) < parent->findLegacyChildDepth(obj))
-					set = true;
-			}
-
-			if (set || v == nullptr)
-			{
-				incRef();
-				asAtom val = asAtomHandler::fromObject(this);
-				parent->setVariableByMultiname(m, val, ASObject::CONST_NOT_ALLOWED, nullptr, wrk);
-			}
-
-			if (oldName != BUILTIN_STRINGS::EMPTY && v != nullptr)
+			incRef();
+			asAtom val = asAtomHandler::fromObject(this);
+			// use internal version to avoid any unwanted sideeffects (events/addChild/removeChild)
+			parent->setVariableByMultiname_intern(m, val, ASObject::CONST_NOT_ALLOWED, nullptr,nullptr, wrk);
+			
+			if (oldName != BUILTIN_STRINGS::EMPTY)
 			{
 				m.name_s_id = oldName;
-				v->setVar(wrk, asAtomHandler::undefinedAtom, false);
-				parent->deleteVariableByMultiname(m, wrk);
+				m.ns.push_back(nsNameAndKind());
+				parent->deleteVariableByMultiname_intern(m, wrk);
 			}
 		}
 	}
@@ -468,6 +474,44 @@ void DisplayObject::updatedRect()
 	
 }
 
+ASFUNCTIONBODY_ATOM(DisplayObject,_getter_opaqueBackground)
+{
+	if(!asAtomHandler::is<DisplayObject>(obj))
+	{
+		createError<ArgumentError>(wrk,kInvalidArgumentError,"Function applied to wrong object");
+		return;
+	}
+	if(argslen != 0)
+	{
+		createError<ArgumentError>(wrk,kInvalidArgumentError,"Arguments provided in getter");
+		return;
+	}
+	DisplayObject* th=asAtomHandler::as<DisplayObject>(obj);
+	ret = th->opaqueBackground;
+}
+ASFUNCTIONBODY_ATOM(DisplayObject,_setter_opaqueBackground)
+{
+	if(!asAtomHandler::is<DisplayObject>(obj))
+	{
+		createError<ArgumentError>(wrk,kInvalidArgumentError,"Function applied to wrong object");
+		return;
+	}
+	if(argslen != 1)
+	{
+		createError<ArgumentError>(wrk,kInvalidArgumentError,"Arguments provided in getter");
+		return;
+	}
+	DisplayObject* th=asAtomHandler::as<DisplayObject>(obj);
+	if (asAtomHandler::isNull(args[0]) || asAtomHandler::isUndefined(args[0]))
+		th->opaqueBackground = asAtomHandler::nullAtom;
+	else
+	{
+		// convert argument to uint and ignore alpha component
+		th->opaqueBackground =asAtomHandler::fromUInt(asAtomHandler::toUInt(args[0])&0xffffff) ;
+	}
+	th->requestInvalidation(wrk->getSystemState());
+}
+
 ASFUNCTIONBODY_ATOM(DisplayObject,_getter_filters)
 {
 	if(!asAtomHandler::is<DisplayObject>(obj))
@@ -502,6 +546,7 @@ ASFUNCTIONBODY_ATOM(DisplayObject,_setter_filters)
 
 	th->filters =ArgumentConversionAtom<_NR<Array>>::toConcrete(wrk,args[0],th->filters);
 	th->maxfilterborder=0;
+	th->filterlistHasChanged=true;
 	for (uint32_t i = 0; i < th->filters->size(); i++)
 	{
 		asAtom f = asAtomHandler::invalidAtom;
@@ -565,7 +610,7 @@ void DisplayObject::requestInvalidationIncludingChildren(InvalidateQueue* q)
 	{
 		this->incRef();
 		q->addToInvalidateQueue(_MR(this));
-		if(!mask.isNull())
+		if(mask)
 			mask->requestInvalidationIncludingChildren(q);
 	}
 }
@@ -731,9 +776,8 @@ void DisplayObject::setFilters(const FILTERLIST& filterlist)
 		else
 		{
 			// check if filterlist has really changed
-			if (filters->size() == filterlist.Filters.size())
+			if (!filterlistHasChanged && filters->size() == filterlist.Filters.size())
 			{
-				bool filterlistHasChanged=false;
 				for (uint32_t i =0; i < filters->size(); i++)
 				{
 					asAtom f=filters->at(i);
@@ -752,6 +796,7 @@ void DisplayObject::setFilters(const FILTERLIST& filterlist)
 					return;
 			}
 		}
+		filterlistHasChanged=true;
 		maxfilterborder=0;
 		filters->resize(0);
 		auto it = filterlist.Filters.cbegin();
@@ -819,14 +864,14 @@ void DisplayObject::setupSurfaceState(IDrawable* d)
 {
 	SurfaceState* state = d->getState();
 	assert(state);
-#ifndef _NDEBUG
+#ifndef NDEBUG
 	state->src=this; // keep track of the DisplayObject when debugging
 #endif
 	if (this->mask)
 		state->mask = this->mask->getCachedSurface();
 	else
 		state->mask.reset();
-	if (!maskee.isNull())
+	if (maskee)
 		state->maskee = maskee->getCachedSurface();
 	else
 		state->maskee.reset();
@@ -837,30 +882,72 @@ void DisplayObject::setupSurfaceState(IDrawable* d)
 	state->alpha = this->alpha;
 	state->allowAsMask = this->allowAsMask();
 	state->maxfilterborder = this->getMaxFilterBorder();
-	state->filters = this->filters;
+	if (this->filterlistHasChanged)
+	{
+		state->filters.clear();
+		state->filters.reserve(this->filters->size()*2);
+		for (uint32_t i = 0; i < this->filters->size(); i++)
+		{
+			asAtom f = asAtomHandler::invalidAtom;
+			this->filters->at_nocheck(f,i);
+			if (asAtomHandler::is<BitmapFilter>(f))
+			{
+				FilterData fdata;
+				asAtomHandler::as<BitmapFilter>(f)->getRenderFilterGradientColors(fdata.gradientcolors);
+				uint32_t step = 0;
+				while (true)
+				{
+					asAtomHandler::as<BitmapFilter>(f)->getRenderFilterArgs(step,fdata.filterdata);
+					state->filters.push_back(fdata);
+					if (fdata.filterdata[0] == 0)
+						break;
+					step++;
+				}
+			}
+		}
+	}
 	this->boundsRectWithoutChildren(state->bounds.min.x, state->bounds.max.x, state->bounds.min.y, state->bounds.max.y, false);
 	if (this->scrollRect)
 		state->scrollRect=this->scrollRect->getRect();
 	else
 		state->scrollRect= RECT();
+	if (this->is<RootMovieClip>())
+	{
+		state->hasOpaqueBackground = true;
+		state->renderWithNanoVG = true;
+		state->opaqueBackground=this->as<RootMovieClip>()->getBackground();
+		this->boundsRect(state->bounds.min.x, state->bounds.max.x, state->bounds.min.y, state->bounds.max.y, false);
+	}
+	else
+	{
+		state->hasOpaqueBackground = !asAtomHandler::isNull(this->opaqueBackground);
+		if (state->hasOpaqueBackground)
+			state->opaqueBackground=RGB(asAtomHandler::toUInt(this->opaqueBackground));
+	}
+	currentrendermatrix=state->matrix;
 }
 
 void DisplayObject::setMask(_NR<DisplayObject> m)
 {
-	bool mustInvalidate=(mask!=m || (m && m->hasChanged));
+	bool mustInvalidate=(mask!=m.getPtr() || (m && m->hasChanged));
 
-	if(!mask.isNull())
+	if(mask)
 	{
 		//Remove previous mask
 		mask->ismask=false;
-		mask->maskee.reset();
+		mask->maskee->removeStoredMember();
+		mask->maskee=nullptr;
+		mask->removeStoredMember();
+		mask=nullptr;
 	}
 
-	mask=m;
-	if(!mask.isNull())
+	mask=m.getPtr();
+	if(mask)
 	{
 		//Use new mask
 		mask->ismask=true;
+		mask->incRef();
+		mask->addStoredMember();
 	}
 
 	if(mustInvalidate)
@@ -870,6 +957,18 @@ void DisplayObject::setMask(_NR<DisplayObject> m)
 			requestInvalidation(getSystemState());
 		else
 			requestInvalidationFilterParent();
+	}
+}
+
+void DisplayObject::setClipMask(_NR<DisplayObject> m)
+{
+	if (clipMask)
+		clipMask->removeStoredMember();
+	clipMask = m.getPtr();
+	if (clipMask)
+	{
+		clipMask->incRef();
+		clipMask->addStoredMember();
 	}
 }
 void DisplayObject::setBlendMode(UI8 blendmode)
@@ -888,12 +987,12 @@ bool DisplayObject::isShaderBlendMode(AS_BLENDMODE bl)
 	return bl == AS_BLENDMODE::BLENDMODE_OVERLAY
 			|| bl == BLENDMODE_HARDLIGHT;
 }
-MATRIX DisplayObject::getConcatenatedMatrix(bool includeRoot) const
+MATRIX DisplayObject::getConcatenatedMatrix(bool includeRoot, bool fromcurrentrendering) const
 {
 	if(!parent || (!includeRoot && parent == getSystemState()->mainClip))
-		return getMatrix();
+		return fromcurrentrendering ? currentrendermatrix : getMatrix();
 	else
-		return parent->getConcatenatedMatrix(includeRoot).multiplyMatrix(getMatrix());
+		return parent->getConcatenatedMatrix(includeRoot).multiplyMatrix(fromcurrentrendering ? currentrendermatrix : getMatrix());
 }
 
 /* Return alpha value between 0 and 1. (The stored alpha value is not
@@ -1096,7 +1195,7 @@ void DisplayObject::invalidateForRenderToBitmap(RenderDisplayObjectToBitmapConta
 void DisplayObject::requestInvalidation(InvalidateQueue* q, bool forceTextureRefresh)
 {
 	//Let's invalidate also the mask
-	if(!mask.isNull() && (mask->hasChanged || forceTextureRefresh))
+	if(mask && (mask->hasChanged || forceTextureRefresh))
 		mask->requestInvalidation(q,forceTextureRefresh);
 }
 
@@ -1111,7 +1210,7 @@ void DisplayObject::updateCachedSurface(IDrawable *d)
 }
 //TODO: Fix precision issues, Adobe seems to do the matrix mult with twips and rounds the results, 
 //this way they have less pb with precision.
-void DisplayObject::localToGlobal(number_t xin, number_t yin, number_t& xout, number_t& yout) const
+void DisplayObject::localToGlobal(number_t xin, number_t yin, number_t& xout, number_t& yout, bool fromcurrentrendering) const
 {
 	if (this == getSystemState()->mainClip)
 	{
@@ -1123,15 +1222,18 @@ void DisplayObject::localToGlobal(number_t xin, number_t yin, number_t& xout, nu
 	}
 	else
 	{
-		getMatrix().multiply2D(xin, yin, xout, yout);
+		if (fromcurrentrendering)
+			currentrendermatrix.multiply2D(xin, yin, xout, yout);
+		else
+			getMatrix().multiply2D(xin, yin, xout, yout);
 		if(parent)
-			parent->localToGlobal(xout, yout, xout, yout);
+			parent->localToGlobal(xout, yout, xout, yout,fromcurrentrendering);
 	}
 }
 //TODO: Fix precision issues
-void DisplayObject::globalToLocal(number_t xin, number_t yin, number_t& xout, number_t& yout) const
+void DisplayObject::globalToLocal(number_t xin, number_t yin, number_t& xout, number_t& yout, bool fromcurrentrendering) const
 {
-	getConcatenatedMatrix().getInverted().multiply2D(xin, yin, xout, yout);
+	getConcatenatedMatrix(fromcurrentrendering).getInverted().multiply2D(xin, yin, xout, yout);
 }
 void DisplayObject::setOnStage(bool staged, bool force,bool inskipping)
 {
@@ -1234,14 +1336,14 @@ ASFUNCTIONBODY_ATOM(DisplayObject,_getAlpha)
 ASFUNCTIONBODY_ATOM(DisplayObject,_getMask)
 {
 	DisplayObject* th=asAtomHandler::as<DisplayObject>(obj);
-	if(th->mask.isNull())
+	if(!th->mask)
 	{
 		asAtomHandler::setNull(ret);
 		return;
 	}
 
 	th->mask->incRef();
-	ret = asAtomHandler::fromObject(th->mask.getPtr());
+	ret = asAtomHandler::fromObject(th->mask);
 }
 
 ASFUNCTIONBODY_ATOM(DisplayObject,_setMask)
@@ -1254,8 +1356,11 @@ ASFUNCTIONBODY_ATOM(DisplayObject,_setMask)
 		DisplayObject* newMask=asAtomHandler::as<DisplayObject>(args[0]);
 		newMask->incRef();
 		th->setMask(_MR(newMask));
-		th->incRef();
-		newMask->maskee = _MR(th);
+		if (newMask->maskee)
+			newMask->maskee->removeStoredMember();
+		newMask->maskee = th;
+		newMask->maskee->incRef();
+		newMask->maskee->addStoredMember();
 	}
 	else
 		th->setMask(NullRef);
@@ -1508,7 +1613,7 @@ ASFUNCTIONBODY_ATOM(DisplayObject,_getBounds)
 		{
 			//We crawled all the parent chain without finding the target
 			//The target is unrelated, compute it's transformation matrix
-			const MATRIX& targetMatrix=target->getConcatenatedMatrix();
+			const MATRIX& targetMatrix=target->getConcatenatedMatrix(false,false);
 			//If it's not invertible just use the previous computed one
 			if(targetMatrix.isInvertible())
 				m = targetMatrix.getInverted().multiplyMatrix(m);
@@ -1650,7 +1755,7 @@ ASFUNCTIONBODY_ATOM(DisplayObject,localToGlobal)
 
 	number_t tempx, tempy;
 
-	th->localToGlobal(pt->getX(), pt->getY(), tempx, tempy);
+	th->localToGlobal(pt->getX(), pt->getY(), tempx, tempy,false);
 
 	ret = asAtomHandler::fromObject(Class<Point>::getInstanceS(wrk,tempx, tempy));
 }
@@ -1664,7 +1769,7 @@ ASFUNCTIONBODY_ATOM(DisplayObject,globalToLocal)
 
 	number_t tempx, tempy;
 
-	th->globalToLocal(pt->getX(), pt->getY(), tempx, tempy);
+	th->globalToLocal(pt->getX(), pt->getY(), tempx, tempy,false);
 
 	ret = asAtomHandler::fromObject(Class<Point>::getInstanceS(wrk,tempx, tempy));
 }
@@ -1929,9 +2034,9 @@ _NR<DisplayObject> DisplayObject::hitTest(const Vector2f& globalPoint, const Vec
 	if((!(visible || type == GENERIC_HIT_INVISIBLE) || !isConstructed()) && (!isMask() || !getClipDepth()))
 		return NullRef;
 
-	const auto& mask = !this->mask.isNull() ? this->mask : this->clipMask;
+	const auto& mask = this->mask ? this->mask : this->clipMask;
 	//First check if there is any mask on this object, if so the point must be inside the mask to go on
-	if(!mask.isNull())
+	if(mask)
 	{
 		//Compute the coordinates local to the mask
 		const MATRIX& maskMatrix = mask->getConcatenatedMatrix();
@@ -2542,7 +2647,7 @@ ASFUNCTIONBODY_ATOM(DisplayObject,AVM1_localToGlobal)
 
 	number_t tempx, tempy;
 
-	th->localToGlobal(asAtomHandler::toNumber(x), asAtomHandler::toNumber(y), tempx, tempy);
+	th->localToGlobal(asAtomHandler::toNumber(x), asAtomHandler::toNumber(y), tempx, tempy,false);
 	asAtomHandler::setNumber(x,wrk,tempx);
 	asAtomHandler::setNumber(y,wrk,tempy);
 	pt->setVariableByMultiname(mx,x,CONST_ALLOWED,nullptr,wrk);
@@ -2572,7 +2677,7 @@ ASFUNCTIONBODY_ATOM(DisplayObject,AVM1_globalToLocal)
 
 	number_t tempx, tempy;
 
-	th->globalToLocal(asAtomHandler::toNumber(x), asAtomHandler::toNumber(y), tempx, tempy);
+	th->globalToLocal(asAtomHandler::toNumber(x), asAtomHandler::toNumber(y), tempx, tempy,false);
 	asAtomHandler::setNumber(x,wrk,tempx);
 	asAtomHandler::setNumber(y,wrk,tempy);
 	pt->setVariableByMultiname(mx,x,CONST_ALLOWED,nullptr,wrk);
@@ -2728,44 +2833,81 @@ void DisplayObject::AVM1SetupMethods(Class_base* c)
 	
 	c->destroyContents();
 	c->borrowedVariables.destroyContents();
-	c->setDeclaredMethodByQName("_x","",Class<IFunction>::getFunction(c->getSystemState(),_getX),GETTER_METHOD,true);
-	c->setDeclaredMethodByQName("_x","",Class<IFunction>::getFunction(c->getSystemState(),_setX),SETTER_METHOD,true);
-	c->setDeclaredMethodByQName("_y","",Class<IFunction>::getFunction(c->getSystemState(),_getY),GETTER_METHOD,true);
-	c->setDeclaredMethodByQName("_y","",Class<IFunction>::getFunction(c->getSystemState(),_setY),SETTER_METHOD,true);
-	c->setDeclaredMethodByQName("_visible","",Class<IFunction>::getFunction(c->getSystemState(),_getVisible),GETTER_METHOD,true);
-	c->setDeclaredMethodByQName("_visible","",Class<IFunction>::getFunction(c->getSystemState(),_setVisible),SETTER_METHOD,true);
-	c->setDeclaredMethodByQName("_xscale","",Class<IFunction>::getFunction(c->getSystemState(),AVM1_getScaleX),GETTER_METHOD,true);
-	c->setDeclaredMethodByQName("_xscale","",Class<IFunction>::getFunction(c->getSystemState(),AVM1_setScaleX),SETTER_METHOD,true);
-	c->setDeclaredMethodByQName("_yscale","",Class<IFunction>::getFunction(c->getSystemState(),AVM1_getScaleY),GETTER_METHOD,true);
-	c->setDeclaredMethodByQName("_yscale","",Class<IFunction>::getFunction(c->getSystemState(),AVM1_setScaleY),SETTER_METHOD,true);
-	c->setDeclaredMethodByQName("_width","",Class<IFunction>::getFunction(c->getSystemState(),_getWidth),GETTER_METHOD,true);
-	c->setDeclaredMethodByQName("_width","",Class<IFunction>::getFunction(c->getSystemState(),_setWidth),SETTER_METHOD,true);
-	c->setDeclaredMethodByQName("_height","",Class<IFunction>::getFunction(c->getSystemState(),_getHeight),GETTER_METHOD,true);
-	c->setDeclaredMethodByQName("_height","",Class<IFunction>::getFunction(c->getSystemState(),_setHeight),SETTER_METHOD,true);
-	c->setDeclaredMethodByQName("_parent","",Class<IFunction>::getFunction(c->getSystemState(),AVM1_getParent),GETTER_METHOD,true);
-	c->setDeclaredMethodByQName("_root","",Class<IFunction>::getFunction(c->getSystemState(),AVM1_getRoot),GETTER_METHOD,true);
-	c->setDeclaredMethodByQName("_url","",Class<IFunction>::getFunction(c->getSystemState(),AVM1_getURL),GETTER_METHOD,true);
-	c->setDeclaredMethodByQName("hitTest","",Class<IFunction>::getFunction(c->getSystemState(),AVM1_hitTest),NORMAL_METHOD,true);
-	c->setDeclaredMethodByQName("localToGlobal","",Class<IFunction>::getFunction(c->getSystemState(),AVM1_localToGlobal),NORMAL_METHOD,true);
-	c->setDeclaredMethodByQName("globalToLocal","",Class<IFunction>::getFunction(c->getSystemState(),AVM1_globalToLocal),NORMAL_METHOD,true);
-	c->setDeclaredMethodByQName("getBytesLoaded","",Class<IFunction>::getFunction(c->getSystemState(),AVM1_getBytesLoaded),NORMAL_METHOD,true);
-	c->setDeclaredMethodByQName("getBytesTotal","",Class<IFunction>::getFunction(c->getSystemState(),AVM1_getBytesTotal),NORMAL_METHOD,true);
-	c->setDeclaredMethodByQName("_xmouse","",Class<IFunction>::getFunction(c->getSystemState(),_getMouseX),GETTER_METHOD,true);
-	c->setDeclaredMethodByQName("_ymouse","",Class<IFunction>::getFunction(c->getSystemState(),_getMouseY),GETTER_METHOD,true);
-	c->setDeclaredMethodByQName("_quality","",Class<IFunction>::getFunction(c->getSystemState(),AVM1_getQuality),GETTER_METHOD,true);
-	c->setDeclaredMethodByQName("_quality","",Class<IFunction>::getFunction(c->getSystemState(),AVM1_setQuality),SETTER_METHOD,true);
-	c->setDeclaredMethodByQName("_alpha","",Class<IFunction>::getFunction(c->getSystemState(),AVM1_getAlpha),GETTER_METHOD,true);
-	c->setDeclaredMethodByQName("_alpha","",Class<IFunction>::getFunction(c->getSystemState(),AVM1_setAlpha),SETTER_METHOD,true);
-	c->setDeclaredMethodByQName("getBounds","",Class<IFunction>::getFunction(c->getSystemState(),AVM1_getBounds),NORMAL_METHOD,true);
-	c->setDeclaredMethodByQName("swapDepths","",Class<IFunction>::getFunction(c->getSystemState(),AVM1_swapDepths),NORMAL_METHOD,true);
-	c->setDeclaredMethodByQName("getDepth","",Class<IFunction>::getFunction(c->getSystemState(),AVM1_getDepth),NORMAL_METHOD,true);
-	c->setDeclaredMethodByQName("setMask","",Class<IFunction>::getFunction(c->getSystemState(),_setMask),NORMAL_METHOD,true);
-	c->setDeclaredMethodByQName("transform","",Class<IFunction>::getFunction(c->getSystemState(),_getTransform),GETTER_METHOD,true);
-	c->setDeclaredMethodByQName("transform","",Class<IFunction>::getFunction(c->getSystemState(),_setTransform),SETTER_METHOD,true);
-	c->setDeclaredMethodByQName("_rotation","",Class<IFunction>::getFunction(c->getSystemState(),_getRotation),GETTER_METHOD,true);
-	c->setDeclaredMethodByQName("_rotation","",Class<IFunction>::getFunction(c->getSystemState(),_setRotation),SETTER_METHOD,true);
-	c->setDeclaredMethodByQName("toString","",Class<IFunction>::getFunction(c->getSystemState(),AVM1_toString,0,Class<ASString>::getRef(c->getSystemState()).getPtr()),NORMAL_METHOD,true);
+	c->setDeclaredMethodByQName("_x","",c->getSystemState()->getBuiltinFunction(_getX),GETTER_METHOD,true);
+	c->setDeclaredMethodByQName("_x","",c->getSystemState()->getBuiltinFunction(_setX),SETTER_METHOD,true);
+	c->setDeclaredMethodByQName("_y","",c->getSystemState()->getBuiltinFunction(_getY),GETTER_METHOD,true);
+	c->setDeclaredMethodByQName("_y","",c->getSystemState()->getBuiltinFunction(_setY),SETTER_METHOD,true);
+	c->setDeclaredMethodByQName("_visible","",c->getSystemState()->getBuiltinFunction(_getVisible),GETTER_METHOD,true);
+	c->setDeclaredMethodByQName("_visible","",c->getSystemState()->getBuiltinFunction(_setVisible),SETTER_METHOD,true);
+	c->setDeclaredMethodByQName("_xscale","",c->getSystemState()->getBuiltinFunction(AVM1_getScaleX),GETTER_METHOD,true);
+	c->setDeclaredMethodByQName("_xscale","",c->getSystemState()->getBuiltinFunction(AVM1_setScaleX),SETTER_METHOD,true);
+	c->setDeclaredMethodByQName("_yscale","",c->getSystemState()->getBuiltinFunction(AVM1_getScaleY),GETTER_METHOD,true);
+	c->setDeclaredMethodByQName("_yscale","",c->getSystemState()->getBuiltinFunction(AVM1_setScaleY),SETTER_METHOD,true);
+	c->setDeclaredMethodByQName("_width","",c->getSystemState()->getBuiltinFunction(_getWidth),GETTER_METHOD,true);
+	c->setDeclaredMethodByQName("_width","",c->getSystemState()->getBuiltinFunction(_setWidth),SETTER_METHOD,true);
+	c->setDeclaredMethodByQName("_height","",c->getSystemState()->getBuiltinFunction(_getHeight),GETTER_METHOD,true);
+	c->setDeclaredMethodByQName("_height","",c->getSystemState()->getBuiltinFunction(_setHeight),SETTER_METHOD,true);
+	c->setDeclaredMethodByQName("_parent","",c->getSystemState()->getBuiltinFunction(AVM1_getParent),GETTER_METHOD,true);
+	c->setDeclaredMethodByQName("_root","",c->getSystemState()->getBuiltinFunction(AVM1_getRoot),GETTER_METHOD,true);
+	c->setDeclaredMethodByQName("_url","",c->getSystemState()->getBuiltinFunction(AVM1_getURL),GETTER_METHOD,true);
+	c->setDeclaredMethodByQName("hitTest","",c->getSystemState()->getBuiltinFunction(AVM1_hitTest),NORMAL_METHOD,true);
+	c->setDeclaredMethodByQName("localToGlobal","",c->getSystemState()->getBuiltinFunction(AVM1_localToGlobal),NORMAL_METHOD,true);
+	c->setDeclaredMethodByQName("globalToLocal","",c->getSystemState()->getBuiltinFunction(AVM1_globalToLocal),NORMAL_METHOD,true);
+	c->setDeclaredMethodByQName("getBytesLoaded","",c->getSystemState()->getBuiltinFunction(AVM1_getBytesLoaded),NORMAL_METHOD,true);
+	c->setDeclaredMethodByQName("getBytesTotal","",c->getSystemState()->getBuiltinFunction(AVM1_getBytesTotal),NORMAL_METHOD,true);
+	c->setDeclaredMethodByQName("_xmouse","",c->getSystemState()->getBuiltinFunction(_getMouseX),GETTER_METHOD,true);
+	c->setDeclaredMethodByQName("_ymouse","",c->getSystemState()->getBuiltinFunction(_getMouseY),GETTER_METHOD,true);
+	c->setDeclaredMethodByQName("_quality","",c->getSystemState()->getBuiltinFunction(AVM1_getQuality),GETTER_METHOD,true);
+	c->setDeclaredMethodByQName("_quality","",c->getSystemState()->getBuiltinFunction(AVM1_setQuality),SETTER_METHOD,true);
+	c->setDeclaredMethodByQName("_alpha","",c->getSystemState()->getBuiltinFunction(AVM1_getAlpha),GETTER_METHOD,true);
+	c->setDeclaredMethodByQName("_alpha","",c->getSystemState()->getBuiltinFunction(AVM1_setAlpha),SETTER_METHOD,true);
+	c->setDeclaredMethodByQName("getBounds","",c->getSystemState()->getBuiltinFunction(AVM1_getBounds),NORMAL_METHOD,true);
+	c->setDeclaredMethodByQName("swapDepths","",c->getSystemState()->getBuiltinFunction(AVM1_swapDepths),NORMAL_METHOD,true);
+	c->setDeclaredMethodByQName("getDepth","",c->getSystemState()->getBuiltinFunction(AVM1_getDepth),NORMAL_METHOD,true);
+	c->setDeclaredMethodByQName("setMask","",c->getSystemState()->getBuiltinFunction(_setMask),NORMAL_METHOD,true);
+	c->setDeclaredMethodByQName("transform","",c->getSystemState()->getBuiltinFunction(_getTransform),GETTER_METHOD,true);
+	c->setDeclaredMethodByQName("transform","",c->getSystemState()->getBuiltinFunction(_setTransform),SETTER_METHOD,true);
+	c->setDeclaredMethodByQName("_rotation","",c->getSystemState()->getBuiltinFunction(_getRotation),GETTER_METHOD,true);
+	c->setDeclaredMethodByQName("_rotation","",c->getSystemState()->getBuiltinFunction(_setRotation),SETTER_METHOD,true);
+	c->setDeclaredMethodByQName("toString","",c->getSystemState()->getBuiltinFunction(AVM1_toString,0,Class<ASString>::getRef(c->getSystemState()).getPtr()),NORMAL_METHOD,true);
 	REGISTER_GETTER_SETTER_RESULTTYPE(c,scrollRect,Rectangle);
+	c->prototype->setDeclaredMethodByQName("_x","",c->getSystemState()->getBuiltinFunction(_getX),GETTER_METHOD,false);
+	c->prototype->setDeclaredMethodByQName("_x","",c->getSystemState()->getBuiltinFunction(_setX),SETTER_METHOD,false);
+	c->prototype->setDeclaredMethodByQName("_y","",c->getSystemState()->getBuiltinFunction(_getY),GETTER_METHOD,false);
+	c->prototype->setDeclaredMethodByQName("_y","",c->getSystemState()->getBuiltinFunction(_setY),SETTER_METHOD,false);
+	c->prototype->setDeclaredMethodByQName("_visible","",c->getSystemState()->getBuiltinFunction(_getVisible),GETTER_METHOD,false);
+	c->prototype->setDeclaredMethodByQName("_visible","",c->getSystemState()->getBuiltinFunction(_setVisible),SETTER_METHOD,false);
+	c->prototype->setDeclaredMethodByQName("_xscale","",c->getSystemState()->getBuiltinFunction(AVM1_getScaleX),GETTER_METHOD,false);
+	c->prototype->setDeclaredMethodByQName("_xscale","",c->getSystemState()->getBuiltinFunction(AVM1_setScaleX),SETTER_METHOD,false);
+	c->prototype->setDeclaredMethodByQName("_yscale","",c->getSystemState()->getBuiltinFunction(AVM1_getScaleY),GETTER_METHOD,false);
+	c->prototype->setDeclaredMethodByQName("_yscale","",c->getSystemState()->getBuiltinFunction(AVM1_setScaleY),SETTER_METHOD,false);
+	c->prototype->setDeclaredMethodByQName("_width","",c->getSystemState()->getBuiltinFunction(_getWidth),GETTER_METHOD,false);
+	c->prototype->setDeclaredMethodByQName("_width","",c->getSystemState()->getBuiltinFunction(_setWidth),SETTER_METHOD,false);
+	c->prototype->setDeclaredMethodByQName("_height","",c->getSystemState()->getBuiltinFunction(_getHeight),GETTER_METHOD,false);
+	c->prototype->setDeclaredMethodByQName("_height","",c->getSystemState()->getBuiltinFunction(_setHeight),SETTER_METHOD,false);
+	c->prototype->setDeclaredMethodByQName("_parent","",c->getSystemState()->getBuiltinFunction(AVM1_getParent),GETTER_METHOD,false);
+	c->prototype->setDeclaredMethodByQName("_root","",c->getSystemState()->getBuiltinFunction(AVM1_getRoot),GETTER_METHOD,false);
+	c->prototype->setDeclaredMethodByQName("_url","",c->getSystemState()->getBuiltinFunction(AVM1_getURL),GETTER_METHOD,false);
+	c->prototype->setDeclaredMethodByQName("hitTest","",c->getSystemState()->getBuiltinFunction(AVM1_hitTest),NORMAL_METHOD,false);
+	c->prototype->setDeclaredMethodByQName("localToGlobal","",c->getSystemState()->getBuiltinFunction(AVM1_localToGlobal),NORMAL_METHOD,false);
+	c->prototype->setDeclaredMethodByQName("globalToLocal","",c->getSystemState()->getBuiltinFunction(AVM1_globalToLocal),NORMAL_METHOD,false);
+	c->prototype->setDeclaredMethodByQName("getBytesLoaded","",c->getSystemState()->getBuiltinFunction(AVM1_getBytesLoaded),NORMAL_METHOD,false);
+	c->prototype->setDeclaredMethodByQName("getBytesTotal","",c->getSystemState()->getBuiltinFunction(AVM1_getBytesTotal),NORMAL_METHOD,false);
+	c->prototype->setDeclaredMethodByQName("_xmouse","",c->getSystemState()->getBuiltinFunction(_getMouseX),GETTER_METHOD,false);
+	c->prototype->setDeclaredMethodByQName("_ymouse","",c->getSystemState()->getBuiltinFunction(_getMouseY),GETTER_METHOD,false);
+	c->prototype->setDeclaredMethodByQName("_quality","",c->getSystemState()->getBuiltinFunction(AVM1_getQuality),GETTER_METHOD,false);
+	c->prototype->setDeclaredMethodByQName("_quality","",c->getSystemState()->getBuiltinFunction(AVM1_setQuality),SETTER_METHOD,false);
+	c->prototype->setDeclaredMethodByQName("_alpha","",c->getSystemState()->getBuiltinFunction(AVM1_getAlpha),GETTER_METHOD,false);
+	c->prototype->setDeclaredMethodByQName("_alpha","",c->getSystemState()->getBuiltinFunction(AVM1_setAlpha),SETTER_METHOD,false);
+	c->prototype->setDeclaredMethodByQName("getBounds","",c->getSystemState()->getBuiltinFunction(AVM1_getBounds),NORMAL_METHOD,false);
+	c->prototype->setDeclaredMethodByQName("swapDepths","",c->getSystemState()->getBuiltinFunction(AVM1_swapDepths),NORMAL_METHOD,false);
+	c->prototype->setDeclaredMethodByQName("getDepth","",c->getSystemState()->getBuiltinFunction(AVM1_getDepth),NORMAL_METHOD,false);
+	c->prototype->setDeclaredMethodByQName("setMask","",c->getSystemState()->getBuiltinFunction(_setMask),NORMAL_METHOD,false);
+	c->prototype->setDeclaredMethodByQName("transform","",c->getSystemState()->getBuiltinFunction(_getTransform),GETTER_METHOD,false);
+	c->prototype->setDeclaredMethodByQName("transform","",c->getSystemState()->getBuiltinFunction(_setTransform),SETTER_METHOD,false);
+	c->prototype->setDeclaredMethodByQName("_rotation","",c->getSystemState()->getBuiltinFunction(_getRotation),GETTER_METHOD,false);
+	c->prototype->setDeclaredMethodByQName("_rotation","",c->getSystemState()->getBuiltinFunction(_setRotation),SETTER_METHOD,false);
+	c->prototype->setDeclaredMethodByQName("toString","",c->getSystemState()->getBuiltinFunction(AVM1_toString,0,Class<ASString>::getRef(c->getSystemState()).getPtr()),NORMAL_METHOD,false);
 }
 DisplayObject *DisplayObject::AVM1GetClipFromPath(tiny_string &path)
 {
@@ -2931,6 +3073,17 @@ void DisplayObject::AVM1SetVariable(tiny_string &name, asAtom v, bool setMember)
 
 void DisplayObject::AVM1SetVariableDirect(uint32_t nameId, asAtom v)
 {
+	// store as local, if it exists
+	auto itl = avm1locals.find(nameId);
+	if (itl != avm1locals.end())
+	{
+		ASObject* o = asAtomHandler::getObject(v);
+		if (o)
+			o->addStoredMember();
+		ASATOM_REMOVESTOREDMEMBER(itl->second);
+		itl->second = v;
+		return;
+	}
 	auto it = avm1variables.find(nameId);
 	if (it != avm1variables.end())
 	{

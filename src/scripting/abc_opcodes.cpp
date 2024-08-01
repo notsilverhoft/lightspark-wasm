@@ -23,16 +23,19 @@
 #include "exceptions.h"
 #include "compat.h"
 #include "scripting/abcutils.h"
+#include "scripting/toplevel/toplevel.h"
 #include "scripting/toplevel/Boolean.h"
 #include "scripting/toplevel/ASString.h"
 #include "scripting/toplevel/Global.h"
 #include "scripting/toplevel/Namespace.h"
+#include "scripting/toplevel/Null.h"
 #include "scripting/toplevel/Number.h"
 #include "scripting/toplevel/Integer.h"
 #include "scripting/toplevel/UInteger.h"
 #include "scripting/toplevel/RegExp.h"
 #include "scripting/toplevel/XML.h"
 #include "scripting/toplevel/XMLList.h"
+#include "scripting/toplevel/Undefined.h"
 #include "scripting/flash/utils/Proxy.h"
 #include "scripting/flash/system/flashsystem.h"
 #include "scripting/flash/display/RootMovieClip.h"
@@ -3073,6 +3076,7 @@ ASObject* ABCVm::newFunction(call_context* th, int n)
 	}
 	//Create the prototype object
 	f->prototype = _MR(new_asobject(th->worker));
+	f->prototype->addStoredMember();
 	f->prototype->setVariableAtomByQName(BUILTIN_STRINGS::STRING_CONSTRUCTOR,nsNameAndKind(),asAtomHandler::fromObject(f),DECLARED_TRAIT,true,false);
 	return f;
 }

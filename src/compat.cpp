@@ -134,7 +134,7 @@ uint64_t compat_get_thread_cputime_us()
 /* If we are run from standalone, g_hinstance stays NULL.
  * In the plugin, DLLMain sets it to the dll's instance.
  */
-HINSTANCE g_hinstance = NULL;
+DLL_PUBLIC HINSTANCE g_hinstance = NULL;
 #define DEFDLLMAIN(x) extern "C" BOOL WINAPI x##_DllMain(HINSTANCE hinstDLL, DWORD fdwReason, LPVOID lpvReserved)
 DEFDLLMAIN(gio);
 DEFDLLMAIN(glib);
@@ -149,7 +149,7 @@ extern "C"
 BOOL WINAPI DllMain (HINSTANCE hinstDLL, DWORD fdwReason, LPVOID lpvReserved)
 {
 	//RUNDLLMAIN(gio); //taken care of by patches from mxe
-	RUNDLLMAIN(glib);
+	//RUNDLLMAIN(glib); //taken care of by patches from mxe
 	//RUNDLLMAIN(cairo); //taken care of by patches from mxe
 	//RUNDLLMAIN(atk); //taken care of by patches from mxe
 	//RUNDLLMAIN(pango); //taken care of by patches from mxe

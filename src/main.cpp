@@ -26,11 +26,11 @@
 #include "logger.h"
 #include "platforms/engineutils.h"
 #include "compat.h"
-#include <SDL.h>
 #include "flash/utils/ByteArray.h"
 #include "scripting/flash/display/RootMovieClip.h"
 #include <sys/stat.h>
 #include "parsing/streams.h"
+#include "launcher.h"
 
 #ifdef __MINGW32__
     #ifndef PATH_MAX
@@ -43,7 +43,6 @@ using namespace lightspark;
 
 class StandaloneEngineData: public EngineData
 {
-	SDL_GLContext mSDLContext;
 	char* mBaseDir;
 	tiny_string mApplicationStoragePath;
 	void removedir(const char* dir)
@@ -105,19 +104,6 @@ public:
 		if (mBaseDir)
 			g_free(mBaseDir);
 	}
-	SDL_Window* createWidget(uint32_t w, uint32_t h) override
-	{
-		SDL_Window* window = SDL_CreateWindow("Lightspark",SDL_WINDOWPOS_UNDEFINED,SDL_WINDOWPOS_UNDEFINED,w,h,SDL_WINDOW_OPENGL | SDL_WINDOW_RESIZABLE);
-		if (window == 0)
-		{
-			// try creation of window without opengl support
-			window = SDL_CreateWindow("Lightspark",SDL_WINDOWPOS_UNDEFINED,SDL_WINDOWPOS_UNDEFINED,w,h,SDL_WINDOW_RESIZABLE);
-			if (window == 0)
-				LOG(LOG_ERROR,"createWidget failed:"<<SDL_GetError());
-		}
-		return window;
-	}
-
 	uint32_t getWindowForGnash() override
 	{
 		/* passing and invalid window id to gnash makes
@@ -134,68 +120,9 @@ public:
 		/* Nothing to do because the standalone main window is
 		 * always focused */
 	}
-	void getWindowPosition(int* x, int* y) override
-	{
-		if (widget)
-		{
-			SDL_GetWindowPosition(widget,x,y);
-		}
-		else
-		{
-			x=0;
-			y=0;
-		}
-	}
-	void setWindowPosition(int x, int y, uint32_t width, uint32_t height) override
-	{
-		if (widget)
-		{
-			SDL_SetWindowPosition(widget,x,y);
-			SDL_SetWindowSize(widget,width,height);
-		}
-	}
 	void openPageInBrowser(const tiny_string& url, const tiny_string& window) override
 	{
 		LOG(LOG_NOT_IMPLEMENTED, "openPageInBrowser not implemented in the standalone mode");
-	}
-	bool getScreenData(SDL_DisplayMode* screen) override
-	{
-		if (SDL_GetDesktopDisplayMode(0, screen) != 0) {
-			LOG(LOG_ERROR,"Capabilities: SDL_GetDesktopDisplayMode failed:"<<SDL_GetError());
-			return false;
-		}
-		return true;
-	}
-	double getScreenDPI() override
-	{
-#if SDL_VERSION_ATLEAST(2, 0, 4)
-		float ddpi;
-		float hdpi;
-		float vdpi;
-		SDL_GetDisplayDPI(SDL_GetWindowDisplayIndex(widget),&ddpi,&hdpi,&vdpi);
-		return ddpi;
-#else
-		LOG(LOG_NOT_IMPLEMENTED,"getScreenDPI needs SDL version >= 2.0.4");
-		return 96.0;
-#endif
-	}
-	void DoSwapBuffers() override
-	{
-		uint32_t err;
-		if (getGLError(err))
-			LOG(LOG_ERROR,"swapbuffers:"<<widget<<" "<<err);
-		SDL_GL_SwapWindow(widget);
-	}
-	void InitOpenGL() override
-	{
-		mSDLContext = SDL_GL_CreateContext(widget);
-		if (!mSDLContext)
-			LOG(LOG_ERROR,"failed to create openGL context:"<<SDL_GetError());
-		initGLEW();
-	}
-	void DeinitOpenGL() override
-	{
-		SDL_GL_DeleteContext(mSDLContext);
 	}
 	bool getAIRApplicationDescriptor(SystemState* sys,tiny_string& xmlstring) override
 	{
@@ -444,7 +371,8 @@ int main(int argc, char* argv[])
 	std::vector<tiny_string> extensions;
 
 	LOG(LOG_INFO,"Lightspark version " << VERSION << " Copyright 2009-2013 Alessandro Pignotti and others");
-
+	
+	tiny_string spoof_os;
 	for(int i=1;i<argc;i++)
 	{
 		if(strcmp(argv[i],"-u")==0 || 
@@ -572,6 +500,38 @@ int main(int argc, char* argv[])
 			}
 			HTTPcookie=argv[i];
 		}
+		else if(strcmp(argv[i],"-os")==0 || 
+				 strcmp(argv[i],"--spoof-os")==0)
+		{
+			i++;
+			if(i==argc)
+			{
+				break;
+			}
+			spoof_os = argv[i];
+		}
+		else if(strcmp(argv[i],"-h")==0 || 
+				 strcmp(argv[i],"--help")==0)
+		{
+			LOG(LOG_ERROR, "Usage: " << argv[0] << " [--url|-u http://loader.url/file.swf]" <<
+							   " [--disable-interpreter|-ni] [--enable-fast-interpreter|-fi]" <<
+#ifdef LLVM_ENABLED
+							   " [--enable-jit|-j]" <<
+#endif
+							   " [--log-level|-l 0-4] [--parameters-file|-p params-file] [--security-sandbox|-s sandbox]" <<
+							   " [--exit-on-error] [--HTTP-cookies cookie] [--air] [--avmplus] [--disable-rendering]" <<
+#ifdef PROFILING_SUPPORT
+							   " [--profiling-output|-o profiling-file]" <<
+#endif
+							   " [--ignore-unhandled-exceptions|-ne]"
+							   " [--fullscreen|-fs]"
+							   " [--scale|-sc]"
+							   " [--load-extension|-le extension-file"
+							   " [--help|-h]" <<
+							   " [--version|-v]" <<
+							   " [<file.swf>]");
+			exit(0);
+		}
 		else
 		{
 			//No options flag, so set the swf file name
@@ -583,26 +543,34 @@ int main(int argc, char* argv[])
 			fileName=argv[i];
 		}
 	}
-
+	
+	// no filename give, we start the launcher
+	Launcher l; // define launcher here, so that the char pointers into the tiny_strings stay valid until the end
 	if(fileName==nullptr)
 	{
-		LOG(LOG_ERROR, "Usage: " << argv[0] << " [--url|-u http://loader.url/file.swf]" <<
-			" [--disable-interpreter|-ni] [--enable-fast-interpreter|-fi]" <<
-#ifdef LLVM_ENABLED
-			" [--enable-jit|-j]" <<
-#endif
-			" [--log-level|-l 0-4] [--parameters-file|-p params-file] [--security-sandbox|-s sandbox]" <<
-			" [--exit-on-error] [--HTTP-cookies cookie] [--air] [--avmplus] [--disable-rendering]" <<
-#ifdef PROFILING_SUPPORT
-			" [--profiling-output|-o profiling-file]" <<
-#endif
-			" [--ignore-unhandled-exceptions|-ne]"
-			" [--fullscreen|-fs]"
-			" [--scale|-sc]"
-			" [--load-extension|-le extension-file"
-			" [--version|-v]" <<
-			" <file.swf>");
-		exit(1);
+		bool fileselected = l.start();
+		if (fileselected)
+		{
+			if (l.selectedfile.empty())
+				exit(0);
+			ignoreUnhandledExceptions=true; // always ignore exception when running from launcher
+			fileName= (char*)l.selectedfile.raw_buf();
+			if (l.needsAIR)
+				flashMode=SystemState::AIR;
+			else if (l.needsAVMplus)
+				flashMode=SystemState::AVMPLUS;
+			
+			if (l.needsfilesystem && l.needsnetwork)
+				sandboxType = SecurityManager::LOCAL_TRUSTED;
+			else if (l.needsfilesystem)
+				sandboxType = SecurityManager::LOCAL_WITH_FILE;
+			else if (l.needsnetwork)
+				sandboxType = SecurityManager::LOCAL_WITH_NETWORK;
+			
+			url = !l.baseurl.empty() ? (char*)l.baseurl.raw_buf() : nullptr;
+		}
+		else
+			exit(0);
 	}
 
 	Log::setLogLevel(log_level);
@@ -626,6 +594,14 @@ int main(int argc, char* argv[])
 		SystemState::staticDeinit();
 		exit(3);
 	}
+	char absolutepath[PATH_MAX];
+	if (realpath(fileName,absolutepath) == nullptr)
+	{
+		LOG(LOG_ERROR, "Unable to resolve file");
+		exit(1);
+	}
+	if (flashMode==SystemState::AIR)
+		EngineData::checkForNativeAIRExtensions(extensions,absolutepath);
 	//NOTE: see SystemState declaration
 	SystemState* sys = new SystemState(fileSize, flashMode);
 	ParseThread* pt = new ParseThread(f, sys->mainClip);
@@ -688,12 +664,6 @@ int main(int argc, char* argv[])
 		sys->setCookies(HTTPcookie);
 
 	// create path for shared object local storage
-	char absolutepath[PATH_MAX];
-	if (realpath(fileName,absolutepath) == nullptr)
-	{
-		LOG(LOG_ERROR, "Unable to resolve file");
-		exit(1);
-	}
 	tiny_string homedir(g_get_home_dir());
 	tiny_string filedatapath = absolutepath;
 	if (filedatapath.find(homedir) == 0) // remove home dir, if file is located below home dir
@@ -704,6 +674,8 @@ int main(int argc, char* argv[])
 	sys->getEngineData()->setLocalStorageAllowedMarker(true);
 	sys->getEngineData()->startInFullScreenMode=startInFullScreenMode;
 	sys->getEngineData()->startscalefactor=startscalefactor;
+	if (!spoof_os.empty())
+		sys->getEngineData()->platformOS=spoof_os;
 
 	sys->securityManager->setSandboxType(sandboxType);
 	if(sandboxType == SecurityManager::REMOTE)
@@ -725,11 +697,7 @@ int main(int argc, char* argv[])
 	 */
 	sys->destroy();
 	int exitcode = sys->getExitCode();
-	SDL_Event event;
-	SDL_zero(event);
-	event.type = LS_USEREVENT_QUIT;
-	SDL_PushEvent(&event);
-	SDL_WaitThread(EngineData::mainLoopThread,nullptr);
+	sys->getEngineData()->addQuitEvent();
 
 	delete pt;
 	delete sys;

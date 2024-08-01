@@ -24,6 +24,8 @@
 #include "compat.h"
 #include "parsing/amf3_generator.h"
 #include "scripting/argconv.h"
+#include "scripting/toplevel/toplevel.h"
+#include "scripting/toplevel/Array.h"
 #include "scripting/toplevel/Boolean.h"
 #include "scripting/toplevel/Number.h"
 #include "scripting/toplevel/Integer.h"
@@ -84,7 +86,7 @@ string ASObject::toDebugString() const
 	{
 		assert(false);
 	}
-#ifndef _NDEBUG
+#ifndef NDEBUG
 	assert(storedmembercount<=uint32_t(this->getRefCount()) || this->getConstant());
 	char buf[300];
 	if (this->getConstant())
@@ -278,16 +280,16 @@ void ASObject::addOwnedObject(ASObject* obj)
 
 void ASObject::sinit(Class_base* c)
 {
-	c->setDeclaredMethodByQName("hasOwnProperty",AS3,Class<IFunction>::getFunction(c->getSystemState(),hasOwnProperty,1,Class<Boolean>::getRef(c->getSystemState()).getPtr()),NORMAL_METHOD,true);
-	c->setDeclaredMethodByQName("setPropertyIsEnumerable",AS3,Class<IFunction>::getFunction(c->getSystemState(),setPropertyIsEnumerable),NORMAL_METHOD,true);
+	c->setDeclaredMethodByQName("hasOwnProperty",AS3,c->getSystemState()->getBuiltinFunction(hasOwnProperty,1,Class<Boolean>::getRef(c->getSystemState()).getPtr()),NORMAL_METHOD,true);
+	c->setDeclaredMethodByQName("setPropertyIsEnumerable",AS3,c->getSystemState()->getBuiltinFunction(setPropertyIsEnumerable),NORMAL_METHOD,true);
 
-	c->prototype->setVariableByQName("toString","",Class<IFunction>::getFunction(c->getSystemState(),_toString,0,Class<ASString>::getRef(c->getSystemState()).getPtr()),DYNAMIC_TRAIT);
-	c->prototype->setVariableByQName("toLocaleString","",Class<IFunction>::getFunction(c->getSystemState(),_toLocaleString,0,Class<ASString>::getRef(c->getSystemState()).getPtr()),DYNAMIC_TRAIT);
-	c->prototype->setVariableByQName("valueOf","",Class<IFunction>::getFunction(c->getSystemState(),valueOf,0,Class<ASObject>::getRef(c->getSystemState()).getPtr()),DYNAMIC_TRAIT);
-	c->prototype->setVariableByQName("hasOwnProperty","",Class<IFunction>::getFunction(c->getSystemState(),hasOwnProperty,1,Class<Boolean>::getRef(c->getSystemState()).getPtr()),DYNAMIC_TRAIT);
-	c->prototype->setVariableByQName("isPrototypeOf","",Class<IFunction>::getFunction(c->getSystemState(),isPrototypeOf,1,Class<Boolean>::getRef(c->getSystemState()).getPtr()),DYNAMIC_TRAIT);
-	c->prototype->setVariableByQName("propertyIsEnumerable","",Class<IFunction>::getFunction(c->getSystemState(),propertyIsEnumerable,1,Class<Boolean>::getRef(c->getSystemState()).getPtr()),DYNAMIC_TRAIT);
-	c->prototype->setVariableByQName("setPropertyIsEnumerable","",Class<IFunction>::getFunction(c->getSystemState(),setPropertyIsEnumerable),DYNAMIC_TRAIT);
+	c->prototype->setVariableByQName("toString","",c->getSystemState()->getBuiltinFunction(_toString,0,Class<ASString>::getRef(c->getSystemState()).getPtr()),DYNAMIC_TRAIT);
+	c->prototype->setVariableByQName("toLocaleString","",c->getSystemState()->getBuiltinFunction(_toLocaleString,0,Class<ASString>::getRef(c->getSystemState()).getPtr()),DYNAMIC_TRAIT);
+	c->prototype->setVariableByQName("valueOf","",c->getSystemState()->getBuiltinFunction(valueOf,0,Class<ASObject>::getRef(c->getSystemState()).getPtr()),DYNAMIC_TRAIT);
+	c->prototype->setVariableByQName("hasOwnProperty","",c->getSystemState()->getBuiltinFunction(hasOwnProperty,1,Class<Boolean>::getRef(c->getSystemState()).getPtr()),DYNAMIC_TRAIT);
+	c->prototype->setVariableByQName("isPrototypeOf","",c->getSystemState()->getBuiltinFunction(isPrototypeOf,1,Class<Boolean>::getRef(c->getSystemState()).getPtr()),DYNAMIC_TRAIT);
+	c->prototype->setVariableByQName("propertyIsEnumerable","",c->getSystemState()->getBuiltinFunction(propertyIsEnumerable,1,Class<Boolean>::getRef(c->getSystemState()).getPtr()),DYNAMIC_TRAIT);
+	c->prototype->setVariableByQName("setPropertyIsEnumerable","",c->getSystemState()->getBuiltinFunction(setPropertyIsEnumerable),DYNAMIC_TRAIT);
 }
 
 void ASObject::buildTraits(ASObject* o)
@@ -632,22 +634,23 @@ bool ASObject::hasPropertyByMultiname(const multiname& name, bool considerDynami
 	return false;
 }
 
-void ASObject::setDeclaredMethodByQName(const tiny_string& name, const tiny_string& ns, IFunction* o, METHOD_TYPE type, bool isBorrowed, bool isEnumerable)
+void ASObject::setDeclaredMethodByQName(const tiny_string& name, const tiny_string& ns, ASObject* o, METHOD_TYPE type, bool isBorrowed, bool isEnumerable)
 {
 	setDeclaredMethodByQName(name, nsNameAndKind(getSystemState(),ns, NAMESPACE), o, type, isBorrowed,isEnumerable);
 }
 
-void ASObject::setDeclaredMethodByQName(const tiny_string& name, const nsNameAndKind& ns, IFunction* o, METHOD_TYPE type, bool isBorrowed, bool isEnumerable)
+void ASObject::setDeclaredMethodByQName(const tiny_string& name, const nsNameAndKind& ns, ASObject* o, METHOD_TYPE type, bool isBorrowed, bool isEnumerable)
 {
 	setDeclaredMethodByQName(getSystemState()->getUniqueStringId(name), ns, o, type, isBorrowed,isEnumerable);
 }
 
-void ASObject::setDeclaredMethodByQName(uint32_t nameId, const nsNameAndKind& ns, IFunction* o, METHOD_TYPE type, bool isBorrowed, bool isEnumerable)
+void ASObject::setDeclaredMethodByQName(uint32_t nameId, const nsNameAndKind& ns, ASObject* o, METHOD_TYPE type, bool isBorrowed, bool isEnumerable)
 {
 	check();
 #ifndef NDEBUG
 	assert(!initialized);
 #endif
+	assert(o->is<IFunction>());
 	//borrowed properties only make sense on class objects
 	assert(!isBorrowed || this->is<Class_base>());
 	//use setVariableByQName(name,ns,o,DYNAMIC_TRAIT) on prototypes
@@ -659,9 +662,9 @@ void ASObject::setDeclaredMethodByQName(uint32_t nameId, const nsNameAndKind& ns
 	 * It is necesarry to decide if o is a function or a method,
 	 * i.e. if a method closure should be created in getProperty.
 	 */
-	if(isBorrowed && o->inClass == nullptr)
-		o->inClass = this->as<Class_base>();
-	o->isStatic = !isBorrowed;
+	if(isBorrowed && o->as<IFunction>()->inClass == nullptr)
+		o->as<IFunction>()->inClass = this->as<Class_base>();
+	o->as<IFunction>()->isStatic = !isBorrowed;
 
 	variable* obj=nullptr;
 	if(isBorrowed)
@@ -695,23 +698,23 @@ void ASObject::setDeclaredMethodByQName(uint32_t nameId, const nsNameAndKind& ns
 		}
 		case GETTER_METHOD:
 		{
-			ASATOM_DECREF(obj->getter);
+			ASATOM_REMOVESTOREDMEMBER(obj->getter);
 			obj->getter=asAtomHandler::fromObject(o);
 			break;
 		}
 		case SETTER_METHOD:
 		{
-			ASATOM_DECREF(obj->setter);
+			ASATOM_REMOVESTOREDMEMBER(obj->setter);
 			obj->setter=asAtomHandler::fromObject(o);
 			break;
 		}
 	}
 	if (type != SETTER_METHOD)
 	{
-		if (o->getReturnType(true))
-			obj->setResultType(o->getReturnType(true));
+		if (o->as<IFunction>()->getReturnType(true))
+			obj->setResultType(o->as<IFunction>()->getReturnType(true));
 	}
-	o->functionname = nameId;
+	o->as<IFunction>()->functionname = nameId;
 }
 
 void ASObject::setDeclaredMethodAtomByQName(const tiny_string& name, const tiny_string& ns, asAtom o, METHOD_TYPE type, bool isBorrowed, bool isEnumerable)
@@ -780,7 +783,7 @@ void ASObject::setDeclaredMethodAtomByQName(uint32_t nameId, const nsNameAndKind
 	o->functionname = nameId;
 }
 
-bool ASObject::deleteVariableByMultiname(const multiname& name, ASWorker* wrk)
+bool ASObject::deleteVariableByMultiname_intern(const multiname& name, ASWorker* wrk)
 {
 	variable* obj=Variables.findObjVar(getSystemState(),name,NO_CREATE_TRAIT,DYNAMIC_TRAIT|DECLARED_TRAIT);
 	
@@ -826,7 +829,7 @@ void ASObject::setVariableByMultiname_i(multiname& name, int32_t value, ASWorker
 
 variable* ASObject::findSettableImpl(SystemState* sys,variables_map& map, const multiname& name, bool* has_getter)
 {
-	variable* ret=map.findObjVar(sys,name,NO_CREATE_TRAIT,DECLARED_TRAIT|DYNAMIC_TRAIT);
+	variable* ret=map.findVarOrSetter(sys,name,DECLARED_TRAIT|DYNAMIC_TRAIT);
 	if(ret)
 	{
 		//It seems valid for a class to redefine only the getter, so if we can't find
@@ -906,7 +909,7 @@ multiname *ASObject::setVariableByMultiname_intern(multiname& name, asAtom& o, C
 
 		// Properties can not be added to a sealed class
 		if (cls && cls->isSealed && 
-				(this->getInstanceWorker()->rootClip->needsActionScript3() || !this->isPrimitive())) // primitives in AVM1 seem to be dynamic
+				this->getInstanceWorker()->rootClip->needsActionScript3()) // treat all AVM1 classes as dynamic
 		{
 			ABCContext* c = nullptr;
 			c = wrk->currentCallContext ? wrk->currentCallContext->mi->context : nullptr;
@@ -1125,7 +1128,7 @@ variable* variables_map::findObjVar(SystemState* sys,const multiname& mname, TRA
 			if(ret->second.kind & traitKinds)
 				return &ret->second;
 			else
-				return NULL;
+				return nullptr;
 		}
 		else if (noNS)
 		{
@@ -1144,7 +1147,7 @@ variable* variables_map::findObjVar(SystemState* sys,const multiname& mname, TRA
 
 	//Name not present, insert it, if the multiname has a single ns and if we have to insert it
 	if(createKind==NO_CREATE_TRAIT)
-		return NULL;
+		return nullptr;
 	if(createKind == DYNAMIC_TRAIT)
 	{
 		var_iterator inserted=Variables.insert(Variables.cbegin(),
@@ -1380,11 +1383,15 @@ ASFUNCTIONBODY_ATOM(ASObject,addProperty)
 	if (!getter.isNull())
 	{
 		ret = asAtomHandler::trueAtom;
+		getter->incRef();
+		getter->addStoredMember();
 		asAtomHandler::toObject(obj,wrk)->setDeclaredMethodByQName(name,"",getter.getPtr(),GETTER_METHOD,false);
 	}
 	if (!setter.isNull())
 	{
 		ret = asAtomHandler::trueAtom;
+		setter->incRef();
+		setter->addStoredMember();
 		asAtomHandler::toObject(obj,wrk)->setDeclaredMethodByQName(name,"",setter.getPtr(),SETTER_METHOD,false);
 	}
 }
@@ -1793,8 +1800,12 @@ void variables_map::destroyContents()
 			Variables.erase(it);
 			if (o)
 				o->removeStoredMember();
-			ASATOM_DECREF(setter);
-			ASATOM_DECREF(getter);
+			o = asAtomHandler::getObject(getter);
+			if (o)
+				o->removeStoredMember();
+			o = asAtomHandler::getObject(setter);
+			if (o)
+				o->removeStoredMember();
 		}
 		else
 			Variables.erase(it);
@@ -1985,7 +1996,9 @@ void ASObject::removeStoredMember()
 	if (storedmembercount && this->canHaveCyclicMemberReference() && ((uint32_t)this->getRefCount() == storedmembercount+1))
 	{
 		if (getInstanceWorker()->isInGarbageCollection() || this->markedforgarbagecollection)
+		{
 			handleGarbageCollection();
+		}
 		else
 		{
 			getInstanceWorker()->addObjectToGarbageCollector(this);

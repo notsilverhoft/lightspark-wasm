@@ -21,8 +21,8 @@
 #include "scripting/class.h"
 #include "scripting/flash/geom/Rectangle.h"
 #include "scripting/flash/display/BitmapContainer.h"
-#include "scripting/flash/display/flashdisplay.h"
 #include "scripting/flash/display/RootMovieClip.h"
+#include "scripting/flash/display/Stage.h"
 #include "parsing/textfile.h"
 #include "backends/cachedsurface.h"
 #include "backends/rendering.h"
@@ -320,6 +320,7 @@ bool RenderThread::doRender(ThreadProfile* profile,Chronometer* chronometer)
 			// upload current content of bitmap container (no need for locking the bitmapcontainer as the worker thread is waiting until rendering is done)
 			// TODO should only be done if the content was already set to something
 			engineData->exec_glTexImage2D_GL_TEXTURE_2D_GL_UNSIGNED_INT_8_8_8_8_HOST(0,w,h,0,it->bitmapcontainer->getData());
+			engineData->exec_glClear(CLEARMASK::STENCIL);
 			baseFramebuffer=bmframebuffer;
 			baseRenderbuffer=bmrenderbuffer;
 			flipvertical=false; // avoid flipping resulting image vertically (as is done for normal rendering)
@@ -558,7 +559,12 @@ void RenderThread::setModelView(const MATRIX& matrix)
 void RenderThread::renderTextureToFrameBuffer(uint32_t filterTextureID, uint32_t w, uint32_t h, float* filterdata, float* gradientcolors, bool isFirstFilter, bool flippedvertical, bool clearstate, bool renderstage3d)
 {
 	if (filterdata)
+	{
+		// last values of filterdata are always width and height
+		filterdata[FILTERDATA_MAXSIZE-2]=w;
+		filterdata[FILTERDATA_MAXSIZE-1]=h;
 		engineData->exec_glUniform1fv(filterdataUniform, FILTERDATA_MAXSIZE, filterdata);
+	}
 	else
 	{
 		float empty=0;
@@ -1587,7 +1593,7 @@ void RenderThread::loadChunkBGRA(const TextureChunk& chunk, uint32_t w, uint32_t
 }
 void RenderThread::renderDisplayObjectToBimapContainer(_NR<DisplayObject> o, const MATRIX &initialMatrix, bool smoothing, AS_BLENDMODE blendMode, ColorTransformBase *ct, _NR<BitmapContainer> bm)
 {
-	if(m_sys->isShuttingDown())
+	if(m_sys->isShuttingDown() || !EngineData::enablerendering)
 		return;
 	mutexRenderToBitmapContainer.lock();
 	RenderDisplayObjectToBitmapContainer r;

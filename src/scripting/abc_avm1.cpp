@@ -25,6 +25,7 @@
 #include "scripting/avm1/avm1text.h"
 #include "scripting/avm1/avm1ui.h"
 #include "scripting/avm1/avm1xml.h"
+#include "scripting/avm1/avm1array.h"
 #include "scripting/toplevel/Global.h"
 #include "scripting/flash/geom/flashgeom.h"
 #include "scripting/flash/geom/Rectangle.h"
@@ -40,6 +41,7 @@
 #include "scripting/flash/filters/GradientBevelFilter.h"
 #include "scripting/flash/filters/GradientGlowFilter.h"
 #include "scripting/flash/ui/ContextMenu.h"
+#include "scripting/toplevel/toplevel.h"
 #include "scripting/abc.h"
 using namespace lightspark;
 
@@ -52,19 +54,20 @@ void ABCVm::registerClassesAVM1()
 
 	registerClassesToplevel(builtinavm1);
 
-	Class<ASObject>::getRef(m_sys)->setDeclaredMethodByQName("addProperty","",Class<IFunction>::getFunction(m_sys,ASObject::addProperty),NORMAL_METHOD,true);
-	Class<ASObject>::getRef(m_sys)->prototype->setVariableByQName("addProperty","",Class<IFunction>::getFunction(m_sys,ASObject::addProperty),DYNAMIC_TRAIT);
-	Class<ASObject>::getRef(m_sys)->setDeclaredMethodByQName("registerClass","",Class<IFunction>::getFunction(m_sys,ASObject::registerClass),NORMAL_METHOD,false);
-	Class<ASObject>::getRef(m_sys)->prototype->setVariableByQName("registerClass","",Class<IFunction>::getFunction(m_sys,ASObject::registerClass),DYNAMIC_TRAIT);
+	Class<ASObject>::getRef(m_sys)->setDeclaredMethodByQName("addProperty","",m_sys->getBuiltinFunction(ASObject::addProperty),NORMAL_METHOD,true);
+	Class<ASObject>::getRef(m_sys)->prototype->setVariableByQName("addProperty","",m_sys->getBuiltinFunction(ASObject::addProperty),DYNAMIC_TRAIT);
+	Class<ASObject>::getRef(m_sys)->setDeclaredMethodByQName("registerClass","",m_sys->getBuiltinFunction(ASObject::registerClass),NORMAL_METHOD,false);
+	Class<ASObject>::getRef(m_sys)->prototype->setVariableByQName("registerClass","",m_sys->getBuiltinFunction(ASObject::registerClass),DYNAMIC_TRAIT);
 
-	builtinavm1->registerBuiltin("ASSetPropFlags","",_MR(Class<IFunction>::getFunction(m_sys,AVM1_ASSetPropFlags)));
-	builtinavm1->registerBuiltin("setInterval","",_MR(Class<IFunction>::getFunction(m_sys,setInterval)));
-	builtinavm1->registerBuiltin("clearInterval","",_MR(Class<IFunction>::getFunction(m_sys,clearInterval)));
-	builtinavm1->registerBuiltin("setTimeout","",_MR(Class<IFunction>::getFunction(m_sys,setTimeout)));
-	builtinavm1->registerBuiltin("updateAfterEvent","",_MR(Class<IFunction>::getFunction(m_sys,AVM1_updateAfterEvent)));
+	builtinavm1->registerBuiltin("ASSetPropFlags","",_MR(m_sys->getBuiltinFunction(AVM1_ASSetPropFlags)));
+	builtinavm1->registerBuiltin("setInterval","",_MR(m_sys->getBuiltinFunction(setInterval)));
+	builtinavm1->registerBuiltin("clearInterval","",_MR(m_sys->getBuiltinFunction(clearInterval)));
+	builtinavm1->registerBuiltin("setTimeout","",_MR(m_sys->getBuiltinFunction(setTimeout)));
+	builtinavm1->registerBuiltin("updateAfterEvent","",_MR(m_sys->getBuiltinFunction(AVM1_updateAfterEvent)));
 
 	builtinavm1->registerBuiltin("object","",Class<ASObject>::getRef(m_sys));
 	builtinavm1->registerBuiltin("Button","",Class<SimpleButton>::getRef(m_sys));
+	builtinavm1->registerBuiltin("Array","",Class<AVM1Array>::getRef(m_sys));
 	builtinavm1->registerBuiltin("Color","",Class<AVM1Color>::getRef(m_sys));
 	builtinavm1->registerBuiltin("Mouse","",Class<AVM1Mouse>::getRef(m_sys));
 	builtinavm1->registerBuiltin("Sound","",Class<AVM1Sound>::getRef(m_sys));

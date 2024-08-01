@@ -18,9 +18,9 @@
 **************************************************************************/
 
 #include "scripting/flash/display/RootMovieClip.h"
-#include "scripting/flash/display/flashdisplay.h"
 #include "scripting/flash/display/LoaderInfo.h"
 #include "scripting/flash/geom/Rectangle.h"
+#include "scripting/toplevel/AVM1Function.h"
 #include "scripting/avm1/avm1display.h"
 #include "scripting/class.h"
 #include "scripting/abc.h"
@@ -42,6 +42,7 @@ RootMovieClip::RootMovieClip(ASWorker* wrk, _NR<LoaderInfo> li, _NR<ApplicationD
 	hasSymbolClass=false;
 	hasMainClass=false;
 	usesActionScript3=false;
+	completionHandled=false;
 	executingFrameScriptCount=0;
 }
 
@@ -70,8 +71,10 @@ void RootMovieClip::setOrigin(const tiny_string& u, const tiny_string& filename)
 	origin = URLInfo(u);
 	//If this URL doesn't contain a filename, add the one passed as an argument (used in main.cpp)
 	if(origin.getPathFile() == "" && filename != "")
-		origin = origin.goToURL(filename);
-
+	{
+		tiny_string fileurl = g_path_is_absolute(filename.raw_buf()) ? g_filename_to_uri(filename.raw_buf(), nullptr,nullptr) : filename;
+		origin = origin.goToURL(fileurl);
+	}
 	if(!loaderInfo.isNull())
 	{
 		loaderInfo->setURL(origin.getParsedURL(), false);
@@ -212,8 +215,6 @@ void RootMovieClip::afterConstruction(bool _explicit)
 		getSystemState()->stage->advanceFrame(true);
 		initFrame();
 	}
-	if (!loaderInfo.isNull())
-		loaderInfo->setComplete();
 }
 void RootMovieClip::revertFrame()
 {
@@ -406,6 +407,13 @@ void RootMovieClip::advanceFrame(bool implicit)
 
 	if (!implicit || !usesActionScript3 || !state.explicit_FP)
 		MovieClip::advanceFrame(implicit);
+	// ensure "complete" events are added _after_ the whole SystemState::tick() events are handled at least once
+	if (!completionHandled)
+	{
+		if (!loaderInfo.isNull())
+			loaderInfo->setComplete();
+		completionHandled=true;
+	}
 }
 
 void RootMovieClip::executeFrameScript()

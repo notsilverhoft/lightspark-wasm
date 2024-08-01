@@ -32,10 +32,10 @@ void ContextMenu::sinit(Class_base* c)
 {
 	CLASS_SETUP(c, EventDispatcher, _constructor, CLASS_FINAL);
 	REGISTER_GETTER_RESULTTYPE(c,isSupported,Boolean);
-	c->setDeclaredMethodByQName("hideBuiltInItems","",Class<IFunction>::getFunction(c->getSystemState(),hideBuiltInItems),NORMAL_METHOD,true);
-	c->setDeclaredMethodByQName("clone","",Class<IFunction>::getFunction(c->getSystemState(),clone),NORMAL_METHOD,true);
-	REGISTER_GETTER_SETTER(c,customItems);
-	REGISTER_GETTER_SETTER(c,builtInItems);
+	c->setDeclaredMethodByQName("hideBuiltInItems","",c->getSystemState()->getBuiltinFunction(hideBuiltInItems),NORMAL_METHOD,true);
+	c->setDeclaredMethodByQName("clone","",c->getSystemState()->getBuiltinFunction(clone),NORMAL_METHOD,true);
+	REGISTER_GETTER_SETTER_RESULTTYPE(c,customItems,Array);
+	REGISTER_GETTER_SETTER_RESULTTYPE(c,builtInItems,ContextMenuBuiltInItems);
 }
 
 bool ContextMenu::destruct()
@@ -174,9 +174,9 @@ void ContextMenu::getVisibleBuiltinContextMenuItems(ContextMenu *m, std::vector<
 	items.push_back(_MR(n));
 }
 
-ASFUNCTIONBODY_GETTER(ContextMenu,isSupported);
-ASFUNCTIONBODY_GETTER_SETTER(ContextMenu,customItems);
-ASFUNCTIONBODY_GETTER_SETTER(ContextMenu,builtInItems);
+ASFUNCTIONBODY_GETTER(ContextMenu,isSupported)
+ASFUNCTIONBODY_GETTER_SETTER(ContextMenu,customItems)
+ASFUNCTIONBODY_GETTER_SETTER(ContextMenu,builtInItems)
 
 ASFUNCTIONBODY_ATOM(ContextMenu,_constructor)
 {

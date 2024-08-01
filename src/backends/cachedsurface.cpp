@@ -47,9 +47,9 @@ SurfaceState::SurfaceState(float _xoffset, float _yoffset, float _alpha, float _
 	,depth(0),clipdepth(0),maxfilterborder(0)
 	,blendmode(_blendmode),smoothing(_smoothing),scaling(_scaling)
 	,visible(true),allowAsMask(true),isMask(_ismask),cacheAsBitmap(_cacheAsBitmap)
-	,needsFilterRefresh(_needsfilterrefresh),needsLayer(_needslayer),isYUV(false),renderWithNanoVG(false)
+	,needsFilterRefresh(_needsfilterrefresh),needsLayer(_needslayer),isYUV(false),renderWithNanoVG(false),hasOpaqueBackground(false)
 {
-#ifndef _NDEBUG
+#ifndef NDEBUG
 	src=nullptr;
 #endif
 }
@@ -61,7 +61,7 @@ SurfaceState::~SurfaceState()
 
 void SurfaceState::reset()
 {
-#ifndef _NDEBUG
+#ifndef NDEBUG
 	src=nullptr;
 #endif
 	xOffset=0.0;
@@ -74,7 +74,7 @@ void SurfaceState::reset()
 	tokens.clear();
 	childrenlist.clear();
 	mask.reset();
-	filters.reset();
+	filters.clear();
 	bounds = RectF();
 	depth=0;
 	clipdepth=0;
@@ -91,6 +91,7 @@ void SurfaceState::reset()
 	cacheAsBitmap=false;
 	needsFilterRefresh=true;
 	needsLayer=false;
+	hasOpaqueBackground=false;
 }
 
 void SurfaceState::setupChildrenList(std::vector<DisplayObject*>& dynamicDisplayList)
@@ -173,7 +174,6 @@ void CachedSurface::Render(SystemState* sys,RenderContext& ctxt, const MATRIX* s
 			container->ct ? *container->ct : state->colortransform,
 			container->blendMode
 			));
-		
 	}
 	else
 	{
@@ -182,12 +182,12 @@ void CachedSurface::Render(SystemState* sys,RenderContext& ctxt, const MATRIX* s
 			state->colortransform,
 			state->blendmode
 			));
-		
 	}
 	EngineData* engineData = sys->getEngineData();
 	bool needscachedtexture = (!container && state->cacheAsBitmap)
 							  || ctxt.transformStack().transform().blendmode == BLENDMODE_LAYER
-							  || !state->filters.isNull()
+							  || !state->filters.empty()
+							  || DisplayObject::isShaderBlendMode(ctxt.transformStack().transform().blendmode)
 							  || (state->needsLayer && sys->getRenderThread()->filterframebufferstack.empty());
 	if (needscachedtexture && (state->needsFilterRefresh || cachedFilterTextureID != UINT32_MAX))
 	{
@@ -210,14 +210,18 @@ void CachedSurface::Render(SystemState* sys,RenderContext& ctxt, const MATRIX* s
 			MATRIX m = baseTransform.matrix;
 			m.x0 = -offset.x;
 			m.y0 = -offset.y;
+			bool maskactive = ctxt.isMaskActive();
+			if (maskactive)
+				ctxt.deactivateMask();
 			this->renderFilters(sys,ctxt,size.x,size.y,m);
+			if (maskactive)
+				ctxt.activateMask();
 		}
 		if (cachedFilterTextureID != UINT32_MAX)
 		{
 			MATRIX m;
 			m.x0 = std::round(baseTransform.matrix.x0+offset.x);
 			m.y0 = std::round(baseTransform.matrix.y0+offset.y);
-			
 			if (DisplayObject::isShaderBlendMode(state->blendmode))
 			{
 				assert (!sys->getRenderThread()->filterframebufferstack.empty());
@@ -226,9 +230,37 @@ void CachedSurface::Render(SystemState* sys,RenderContext& ctxt, const MATRIX* s
 				engineData->exec_glActiveTexture_GL_TEXTURE0(SAMPLEPOSITION::SAMPLEPOS_BLEND);
 				engineData->exec_glBindTexture_GL_TEXTURE_2D(feparent.filtertextureID);
 			}
+			bool maskactive = ctxt.isMaskActive();
+			if (maskactive)
+			{
+				// we have an active mask, so make sure it is applied to the texture being rendered
+				NVGcontext* nvgctxt = sys->getEngineData()->nvgcontext;
+				if (nvgctxt)
+				{
+					// hack: render an empty stroke to force filling the stencil buffer with the current mask
+					nvgBeginFrame(nvgctxt, sys->getRenderThread()->currentframebufferWidth, sys->getRenderThread()->currentframebufferHeight, 1.0);
+					nvgBeginPath(nvgctxt);
+					nvgMoveTo(nvgctxt,0,0);
+					nvgStroke(nvgctxt);
+					nvgClosePath(nvgctxt);
+					nvgEndFrame(nvgctxt);
+					engineData->exec_glActiveTexture_GL_TEXTURE0(SAMPLEPOSITION::SAMPLEPOS_STANDARD);
+					engineData->exec_glBlendFunc(BLEND_ONE,BLEND_ONE_MINUS_SRC_ALPHA);
+					engineData->exec_glUseProgram(((RenderThread&)ctxt).gpu_program);
+				}
+				engineData->exec_glEnable_GL_STENCIL_TEST();
+				engineData->exec_glStencilMask(0x7f);
+				engineData->exec_glStencilFunc(DEPTHSTENCIL_FUNCTION::DEPTHSTENCIL_EQUAL,0x80,0x80);
+			}
 			sys->getRenderThread()->setModelView(m);
 			sys->getRenderThread()->setupRenderingState(state->alpha,ctxt.transformStack().transform().colorTransform,state->smoothing,state->blendmode);
 			sys->getRenderThread()->renderTextureToFrameBuffer(cachedFilterTextureID,size.x,size.y,nullptr,nullptr,false,true,false);
+			if (maskactive)
+			{
+				engineData->exec_glDisable_GL_STENCIL_TEST();
+				engineData->exec_glStencilMask(0xff);
+				engineData->exec_glStencilFunc(DEPTHSTENCIL_FUNCTION::DEPTHSTENCIL_ALWAYS,0x00,0xff);
+			}
 			ctxt.transformStack().pop();
 			return;
 		}
@@ -253,17 +285,27 @@ void CachedSurface::Render(SystemState* sys,RenderContext& ctxt, const MATRIX* s
 }
 void CachedSurface::renderImpl(SystemState* sys,RenderContext& ctxt)
 {
+	if (state->scrollRect.Xmin || state->scrollRect.Xmax || state->scrollRect.Ymin || state->scrollRect.Ymax)
+	{
+		MATRIX m = ctxt.transformStack().transform().matrix;
+		sys->getEngineData()->exec_glScissor(m.getTranslateX()+state->scrollRect.Xmin*m.getScaleX()
+											 ,sys->getRenderThread()->windowHeight-m.getTranslateY()-state->scrollRect.Ymax*m.getScaleY()
+											 ,(state->scrollRect.Xmax-state->scrollRect.Xmin)*m.getScaleX()
+											 ,(state->scrollRect.Ymax-state->scrollRect.Ymin)*m.getScaleY());
+	}
 	// first look if we have tokens or bitmaps to render
 	if (state->renderWithNanoVG)
 	{
 		NVGcontext* nvgctxt = sys->getEngineData()->nvgcontext;
-		if (nvgctxt)
+		if (nvgctxt && !state->tokens.empty())
 		{
 			if (state->alpha == 0)
 				return;
 			ColorTransformBase ct = ctxt.transformStack().transform().colorTransform;
 			nvgResetTransform(nvgctxt);
 			nvgBeginFrame(nvgctxt, sys->getRenderThread()->currentframebufferWidth, sys->getRenderThread()->currentframebufferHeight, 1.0);
+			if (!ctxt.isMaskActive() && !ctxt.isDrawingMask())
+				nvgDeactivateClipping(nvgctxt);
 			switch (ctxt.transformStack().transform().blendmode)
 			{
 				case BLENDMODE_NORMAL:
@@ -303,40 +345,85 @@ void CachedSurface::renderImpl(SystemState* sys,RenderContext& ctxt)
 			nvgTransform(nvgctxt,m.xx,m.yx,m.xy,m.yy,m.x0,m.y0);
 			nvgTranslate(nvgctxt,state->xOffset,state->yOffset);
 			nvgScale(nvgctxt,state->scaling,state->scaling);
+			float basetransform[6];
+			nvgCurrentTransform(nvgctxt,basetransform);
 			NVGcolor startcolor = nvgRGBA(0,0,0,0);
 			nvgBeginPath(nvgctxt);
 			if (ctxt.isDrawingMask())
 				nvgBeginClip(nvgctxt);
 			nvgFillColor(nvgctxt,startcolor);
 			nvgStrokeColor(nvgctxt,startcolor);
+			number_t strokescalex=1.0;
+			number_t strokescaley=1.0;
 			bool instroke = false;
 			bool infill = false;
 			bool renderneeded=false;
-			number_t strokescalex=1.0;
-			number_t strokescaley=1.0;
 			int tokentype = 1;
+			tokensVector* tk = &state->tokens;
 			while (tokentype)
 			{
-				std::vector<uint64_t>::const_iterator it;
-				std::vector<uint64_t>::const_iterator itbegin;
-				std::vector<uint64_t>::const_iterator itend;
+				TokenList::const_iterator it;
+				TokenList::const_iterator itbegin;
+				TokenList::const_iterator itend;
+				bool skip = false;
 				switch(tokentype)
 				{
 					case 1:
-						itbegin = state->tokens.filltokens.begin();
-						itend = state->tokens.filltokens.end();
-						it = state->tokens.filltokens.begin();
-						tokentype++;
+						if (!tk->filltokens)
+						{
+							tokentype++;
+							skip = true;
+							break;
+						}
+						itbegin = tk->filltokens->tokens.begin();
+						itend = tk->filltokens->tokens.end();
+						it = tk->filltokens->tokens.begin();
+						if (tk->isGlyph)
+						{
+							RGBA color = tk->color;
+							float r,g,b,a;
+							ct.applyTransformation(color,r,g,b,a);
+							NVGcolor c = nvgRGBA(r*255.0,g*255.0,b*255.0,a*255.0);
+							nvgFillColor(nvgctxt,c);
+							infill=true;
+							nvgResetTransform(nvgctxt);
+							nvgTransform(nvgctxt,basetransform[0],basetransform[1],basetransform[2],basetransform[3],basetransform[4],basetransform[5]);
+							nvgTransform(nvgctxt,tk->startMatrix.xx,tk->startMatrix.yx,tk->startMatrix.xy,tk->startMatrix.yy,tk->startMatrix.x0,tk->startMatrix.y0);
+						}
+						if (tk->next)
+							tk = tk->next;
+						else
+						{
+							tk = &state->tokens;
+							tokentype++;
+						}
 						break;
 					case 2:
-						it = state->tokens.stroketokens.begin();
-						itbegin = state->tokens.stroketokens.begin();
-						itend = state->tokens.stroketokens.end();
-						tokentype++;
+						if (!tk->stroketokens)
+						{
+							tokentype=0;
+							break;
+						}
+						it = tk->stroketokens->tokens.begin();
+						itbegin = tk->stroketokens->tokens.begin();
+						itend = tk->stroketokens->tokens.end();
+						if (tk->next)
+							tk = tk->next;
+						else
+						{
+							tk = &state->tokens;
+							tokentype++;
+						}
 						break;
 					default:
 						tokentype = 0;
 						break;
+				}
+				if (skip)
+				{
+					skip = false;
+					tk = &state->tokens;
+					continue;
 				}
 				if (tokentype == 0)
 					break;
@@ -451,6 +538,11 @@ void CachedSurface::renderImpl(SystemState* sys,RenderContext& ctxt)
 								case RADIAL_GRADIENT:
 								case FOCAL_RADIAL_GRADIENT:
 								{
+									if (style->bitmap->nanoVGGradientPattern.image!=0) // gradient is cached in bitmapContainer of fillstyle
+									{
+										nvgFillPaint(nvgctxt, style->bitmap->nanoVGGradientPattern);
+										break;
+									}
 									bool isFocal = style->FillStyleType == FOCAL_RADIAL_GRADIENT;
 									bool isLinear = style->FillStyleType == LINEAR_GRADIENT;
 									MATRIX m = style->Matrix;
@@ -492,6 +584,7 @@ void CachedSurface::renderImpl(SystemState* sys,RenderContext& ctxt)
 										};
 										nvgTransformMultiply(pattern.xform, xform);
 									}
+									style->bitmap->nanoVGGradientPattern = pattern;
 									nvgFillPaint(nvgctxt, pattern);
 									break;
 								}
@@ -570,6 +663,11 @@ void CachedSurface::renderImpl(SystemState* sys,RenderContext& ctxt)
 									case FOCAL_RADIAL_GRADIENT:
 									{
 										auto fill = style->FillType;
+										if (fill.bitmap->nanoVGGradientPattern.image!=0) // gradient is cached in bitmapContainer of fillstyle
+										{
+											nvgFillPaint(nvgctxt, fill.bitmap->nanoVGGradientPattern);
+											break;
+										}
 										bool isFocal = fill.FillStyleType == FOCAL_RADIAL_GRADIENT;
 										bool isLinear = fill.FillStyleType == LINEAR_GRADIENT;
 										MATRIX m = fill.Matrix;
@@ -586,22 +684,30 @@ void CachedSurface::renderImpl(SystemState* sys,RenderContext& ctxt)
 
 										NVGpaint pattern;
 										if (isLinear)
-											pattern = nvgLinearGradientStops(nvgctxt, -16384.0, 0, 16384.0, 0, stops.data(), stops.size(), spreadMode);
+										{
+											MATRIX tmp = m;
+											tmp.x0 = m.x0/state->scaling - fill.ShapeBounds.Xmin;
+											tmp.y0 = m.y0/state->scaling - fill.ShapeBounds.Ymin;
+											Vector2f start = tmp.multiply2D(Vector2f(-16384.0, 0));
+											Vector2f end = tmp.multiply2D(Vector2f(16384.0, 0));
+											pattern = nvgLinearGradientStops(nvgctxt, start.x, start.y, end.x, end.y, stops.data(), stops.size(), spreadMode);
+										}
 										else
 										{
 											number_t x0 = isFocal ? fill.FocalGradient.FocalPoint*16384.0 : 0.0;
 											pattern = nvgRadialGradientStops(nvgctxt, x0, 0, 0, 16384.0, stops.data(), stops.size(), spreadMode);
+											float xform[6] =
+											{
+												(float)m.xx,
+												(float)m.yx,
+												(float)m.xy,
+												(float)m.yy,
+												(float)m.x0/state->scaling - fill.ShapeBounds.Xmin,
+												(float)m.y0/state->scaling - fill.ShapeBounds.Ymin,
+											};
+											nvgTransformMultiply(pattern.xform, xform);
 										}
-										float xform[6] =
-										{
-											(float)m.xx,
-											(float)m.yx,
-											(float)m.xy,
-											(float)m.yy,
-											(float)m.x0/state->scaling - fill.ShapeBounds.Xmin,
-											(float)m.y0/state->scaling - fill.ShapeBounds.Ymin,
-										};
-										nvgTransformMultiply(pattern.xform, xform);
+										fill.bitmap->nanoVGGradientPattern=pattern;
 										nvgStrokePaint(nvgctxt, pattern);
 										break;
 									}
@@ -776,6 +882,7 @@ void CachedSurface::renderImpl(SystemState* sys,RenderContext& ctxt)
 		ctxt.deactivateMask();
 		ctxt.popMask();
 	});
+	sys->getEngineData()->exec_glDisable_GL_SCISSOR_TEST();
 }
 void CachedSurface::renderFilters(SystemState* sys,RenderContext& ctxt, uint32_t w, uint32_t h, const MATRIX& m)
 {
@@ -824,7 +931,11 @@ void CachedSurface::renderFilters(SystemState* sys,RenderContext& ctxt, uint32_t
 	uint32_t parentframebufferHeight = sys->getRenderThread()->currentframebufferHeight;
 	
 	sys->getRenderThread()->setViewPort(w,h,true);
-	engineData->exec_glClearColor(0,0,0,0);
+	if (state->hasOpaqueBackground)
+		engineData->exec_glClearColor(float(state->opaqueBackground.Red)/255.0,float(state->opaqueBackground.Green)/255.0,float(state->opaqueBackground.Blue)/255.0,1.0);
+	else
+		engineData->exec_glClearColor(0,0,0,0);
+
 	engineData->exec_glClear(CLEARMASK(CLEARMASK::COLOR|CLEARMASK::DEPTH|CLEARMASK::STENCIL));
 	filterstackentry fe;
 	fe.filterframebuffer=filterframebuffer;
@@ -865,37 +976,26 @@ void CachedSurface::renderFilters(SystemState* sys,RenderContext& ctxt, uint32_t
 	sys->getRenderThread()->setViewPort(w,h,true);
 	uint32_t texture1 = filterTextureIDoriginal;
 	uint32_t texture2 = filterTextureID2;
-	if (!state->filters.isNull())
+	bool firstfilter = true;
+	for (auto it = state->filters.begin(); it != state->filters.end(); it++)
 	{
-		for (uint32_t i = 0; i < state->filters->size(); i++)
+		if ((*it).filterdata[0] == 0) // end of filter
 		{
-			asAtom f = asAtomHandler::invalidAtom;
-			state->filters->at_nocheck(f,i);
-			if (asAtomHandler::is<BitmapFilter>(f))
-			{
-				float gradientcolors[256*4];
-				asAtomHandler::as<BitmapFilter>(f)->getRenderFilterGradientColors(gradientcolors);
-				float filterdata[FILTERDATA_MAXSIZE];
-				uint32_t step = 0;
-				while (true)
-				{
-					asAtomHandler::as<BitmapFilter>(f)->getRenderFilterArgs(step,filterdata,w,h);
-					if (filterdata[0] == 0)
-						break;
-					step++;
-					engineData->exec_glFramebufferTexture2D_GL_FRAMEBUFFER(texture2);
-					engineData->exec_glClearColor(0,0,0,0);
-					engineData->exec_glClear(CLEARMASK(CLEARMASK::COLOR|CLEARMASK::DEPTH|CLEARMASK::STENCIL));
-					sys->getRenderThread()->renderTextureToFrameBuffer(texture1,w,h,filterdata,gradientcolors,!i,false);
-					if (texture1 == filterTextureIDoriginal)
-						texture1 = filterTextureID1;
-					std::swap(texture1,texture2);
-				}
-				engineData->exec_glFramebufferTexture2D_GL_FRAMEBUFFER(filterDstTexture);
-				engineData->exec_glClearColor(0,0,0,0);
-				engineData->exec_glClear(CLEARMASK(CLEARMASK::COLOR|CLEARMASK::DEPTH|CLEARMASK::STENCIL));
-				sys->getRenderThread()->renderTextureToFrameBuffer(texture1,w,h,nullptr,nullptr,false, false);
-			}
+			engineData->exec_glFramebufferTexture2D_GL_FRAMEBUFFER(filterDstTexture);
+			engineData->exec_glClearColor(0,0,0,0);
+			engineData->exec_glClear(CLEARMASK(CLEARMASK::COLOR|CLEARMASK::DEPTH|CLEARMASK::STENCIL));
+			sys->getRenderThread()->renderTextureToFrameBuffer(texture1,w,h,nullptr,nullptr,false, false);
+			firstfilter=false;
+		}
+		else
+		{
+			engineData->exec_glFramebufferTexture2D_GL_FRAMEBUFFER(texture2);
+			engineData->exec_glClearColor(0,0,0,0);
+			engineData->exec_glClear(CLEARMASK(CLEARMASK::COLOR|CLEARMASK::DEPTH|CLEARMASK::STENCIL));
+			sys->getRenderThread()->renderTextureToFrameBuffer(texture1,w,h,((*it).filterdata),((*it).gradientcolors),firstfilter,false);
+			if (texture1 == filterTextureIDoriginal)
+				texture1 = filterTextureID1;
+			std::swap(texture1,texture2);
 		}
 	}
 	sys->getRenderThread()->filterframebufferstack.pop_back();
@@ -920,7 +1020,7 @@ void CachedSurface::renderFilters(SystemState* sys,RenderContext& ctxt, uint32_t
 	cachedFilterTextureID=texture1;
 	engineData->exec_glDeleteTextures(1,&texture2);
 	engineData->exec_glDeleteTextures(1,&filterDstTexture);
-	if (state->filters.isNull() || state->filters->size()==0)
+	if (state->filters.empty())
 		engineData->exec_glDeleteTextures(1,&filterTextureID1);
 	else
 		engineData->exec_glDeleteTextures(1,&filterTextureIDoriginal);
@@ -953,7 +1053,7 @@ RectF CachedSurface::boundsRectWithRenderTransform(const MATRIX& matrix, const M
 		MATRIX m = matrix.multiplyMatrix(child->state->matrix);
 		bounds = bounds._union(child->boundsRectWithRenderTransform(m, initialMatrix));
 	}
-	if (!state->filters.isNull())
+	if (!state->filters.empty())
 	{
 		number_t filterborder = state->maxfilterborder;
 		bounds.min.x -= filterborder*initialMatrix.getScaleX();
@@ -974,7 +1074,7 @@ CachedSurface::~CachedSurface()
 			delete state;
 	}
 	if (cachedFilterTextureID != UINT32_MAX)
- {
+	{
 		SystemState* sys = getSys();
 		if (sys && sys->getRenderThread())
 			sys->getRenderThread()->addDeletedTexture(cachedFilterTextureID);

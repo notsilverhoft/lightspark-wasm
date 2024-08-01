@@ -20,7 +20,7 @@
 #include "NativeWindow.h"
 #include "scripting/toplevel/Number.h"
 #include "scripting/flash/geom/Rectangle.h"
-#include "scripting/flash/display/flashdisplay.h"
+#include "scripting/flash/display/Stage.h"
 #include "scripting/class.h"
 #include "scripting/argconv.h"
 #include "platforms/engineutils.h"
@@ -41,7 +41,7 @@ void NativeWindow::sinit(Class_base* c)
 	REGISTER_GETTER_SETTER_RESULTTYPE(c,x,Number);
 	REGISTER_GETTER_SETTER_RESULTTYPE(c,y,Number);
 	REGISTER_GETTER_SETTER_RESULTTYPE(c,bounds,Rectangle);
-	c->setDeclaredMethodByQName("startMove","",Class<IFunction>::getFunction(c->getSystemState(),startMove,0,Class<Boolean>::getRef(c->getSystemState()).getPtr()),NORMAL_METHOD,true);
+	c->setDeclaredMethodByQName("startMove","",c->getSystemState()->getBuiltinFunction(startMove,0,Class<Boolean>::getRef(c->getSystemState()).getPtr()),NORMAL_METHOD,true);
 }
 ASFUNCTIONBODY_GETTER_SETTER_NOT_IMPLEMENTED(NativeWindow,x)
 ASFUNCTIONBODY_GETTER_SETTER_NOT_IMPLEMENTED(NativeWindow,y)

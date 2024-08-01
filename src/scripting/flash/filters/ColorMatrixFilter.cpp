@@ -21,6 +21,7 @@
 #include "scripting/class.h"
 #include "scripting/argconv.h"
 #include "scripting/flash/display/BitmapData.h"
+#include "scripting/toplevel/Array.h"
 
 using namespace std;
 using namespace lightspark;
@@ -116,7 +117,7 @@ bool ColorMatrixFilter::compareFILTER(const FILTER& filter) const
 	}
 	return false;
 }
-void ColorMatrixFilter::getRenderFilterArgs(uint32_t step,float* args, uint32_t w, uint32_t h) const
+void ColorMatrixFilter::getRenderFilterArgs(uint32_t step,float* args) const
 {
 	if (step == 0)
 	{

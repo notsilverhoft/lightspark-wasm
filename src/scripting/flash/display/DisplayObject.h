@@ -39,6 +39,7 @@ class Transform;
 class Rectangle;
 class KeyboardEvent;
 class InvalidateQueue;
+class CachedSurface;
 struct RenderDisplayObjectToBitmapContainer;
 
 class DisplayObject: public EventDispatcher, public IBitmapDrawable
@@ -55,12 +56,6 @@ friend class Bitmap;
 friend class CairoRenderer;
 friend class Graphics;
 friend std::ostream& operator<<(std::ostream& s, const DisplayObject& r);
-public:
-	enum HIT_TYPE { GENERIC_HIT, // point is over the object
-					GENERIC_HIT_INVISIBLE, // ...even if the object is invisible
-					MOUSE_CLICK_HIT, // point over the object and mouseEnabled
-					DOUBLE_CLICK_HIT // point over the object and doubleClickEnabled
-				  };
 private:
 	ASPROPERTY_GETTER_SETTER(_NR<AccessibilityProperties>,accessibilityProperties);
 	static ATOMIC_INT32(instanceCount);
@@ -73,12 +68,14 @@ private:
 	// if true, this displayobject is the root object of a loaded file (swf or image)
 	bool isLoadedRoot;
 	bool ismask;
+	bool filterlistHasChanged;
 	number_t maxfilterborder;
 public:
 	UI16_SWF Ratio;
 	int ClipDepth;
 	DisplayObject* avm1PrevDisplayObject;
 	DisplayObject* avm1NextDisplayObject;
+	std::map<uint32_t,asAtom > avm1locals;
 private:
 	// the parent is not handled as a _NR<DisplayObjectContainer> because that will lead to circular dependencies in refcounting
 	// and the parent can never be destructed
@@ -106,6 +103,7 @@ private:
 	void onSetScrollRect(_NR<Rectangle> oldValue);
 protected:
 	_NR<Rectangle> scalingGrid;
+	MATRIX currentrendermatrix;
 	std::multimap<uint32_t,_NR<DisplayObject>> variablebindings;
 	bool onStage;
 	bool visible;
@@ -113,10 +111,10 @@ protected:
 	/**
 	  	The object that masks us, if any
 	*/
-	_NR<DisplayObject> mask;
+	DisplayObject* mask;
 	// The object that we're masking, if any.
-	_NR<DisplayObject> maskee;
-	_NR<DisplayObject> clipMask;
+	DisplayObject* maskee;
+	DisplayObject* clipMask;
 	mutable Mutex spinlock;
 	void computeBoundsForTransformedRect(number_t xmin, number_t xmax, number_t ymin, number_t ymax,
 			number_t& outXMin, number_t& outYMin, number_t& outWidth, number_t& outHeight,
@@ -131,7 +129,6 @@ protected:
 	bool skipRender() const;
 
 	bool defaultRender(RenderContext& ctxt);
-	RectF boundsRectWithRenderTransform(const MATRIX& matrix, bool includeOwnFilters, const MATRIX& initialMatrix);
 	virtual bool boundsRect(number_t& xmin, number_t& xmax, number_t& ymin, number_t& ymax, bool visibleOnly)
 	{
 		throw RunTimeException("DisplayObject::boundsRect: Derived class must implement this!");
@@ -150,7 +147,7 @@ public:
 	virtual void fillGraphicsData(Vector* v, bool recursive) {}
 	void updatedRect(); // scrollrect was changed
 	void setMask(_NR<DisplayObject> m);
-	void setClipMask(_NR<DisplayObject> m) { clipMask = m; }
+	void setClipMask(_NR<DisplayObject> m);
 	void setBlendMode(UI8 blendmode);
 	AS_BLENDMODE getBlendMode() const { return blendMode; }
 	static bool isShaderBlendMode(AS_BLENDMODE bl);
@@ -219,9 +216,9 @@ public:
 	virtual void invalidateForRenderToBitmap(RenderDisplayObjectToBitmapContainer* container);
 	virtual void requestInvalidation(InvalidateQueue* q, bool forceTextureRefresh=false);
 	void updateCachedSurface(IDrawable* d);
-	MATRIX getConcatenatedMatrix(bool includeRoot=false) const;
-	void localToGlobal(number_t xin, number_t yin, number_t& xout, number_t& yout) const;
-	void globalToLocal(number_t xin, number_t yin, number_t& xout, number_t& yout) const;
+	MATRIX getConcatenatedMatrix(bool includeRoot=false, bool fromcurrentrendering=true) const;
+	void localToGlobal(number_t xin, number_t yin, number_t& xout, number_t& yout, bool fromcurrentrendering=true) const;
+	void globalToLocal(number_t xin, number_t yin, number_t& xout, number_t& yout, bool fromcurrentrendering=true) const;
 	float getConcatenatedAlpha() const;
 	virtual float getScaleFactor() const;
 	multiname* setVariableByMultiname(multiname& name, asAtom& o, CONST_ALLOWED_FLAG allowConst, bool* alreadyset, ASWorker* wrk) override;
@@ -242,8 +239,6 @@ public:
 	virtual void afterLegacyInsert();
 	virtual void afterLegacyDelete(bool inskipping) {}
 	virtual uint32_t getTagID() const { return UINT32_MAX;}
-	virtual void startDrawJob() {}
-	virtual void endDrawJob() {}
 	
 	bool getBounds(number_t& xmin, number_t& xmax, number_t& ymin, number_t& ymax, const MATRIX& m, bool visibleOnly=false);
 	_NR<DisplayObject> hitTest(const Vector2f& globalPoint, const Vector2f& localPoint, HIT_TYPE type,bool interactiveObjectsOnly);
@@ -289,9 +284,9 @@ public:
 	// Nominal width and heigt are the size before scaling and rotation
 	number_t getNominalWidth();
 	number_t getNominalHeight();
-	DisplayObject* getMask() const { return mask.getPtr(); }
-	DisplayObject* getMaskee() const { return maskee.getPtr(); }
-	DisplayObject* getClipMask() const { return clipMask.getPtr(); }
+	DisplayObject* getMask() const { return mask; }
+	DisplayObject* getMaskee() const { return maskee; }
+	DisplayObject* getClipMask() const { return clipMask; }
 	bool inMask() const;
 	bool belongsToMask() const;
 	
@@ -340,7 +335,7 @@ public:
 	ASFUNCTION_ATOM(hitTestPoint);
 	ASPROPERTY_GETTER_SETTER(number_t, rotationX);
 	ASPROPERTY_GETTER_SETTER(number_t, rotationY);
-	ASPROPERTY_GETTER_SETTER(_NR<ASObject>, opaqueBackground);
+	ASPROPERTY_GETTER_SETTER(asAtom, opaqueBackground);
 	ASPROPERTY_GETTER_SETTER(_NR<ASObject>, metaData);
 	
 	ASFUNCTION_ATOM(AVM1_getScaleX);

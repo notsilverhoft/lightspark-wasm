@@ -27,7 +27,6 @@
 #include "swftypes.h"
 #include "smartrefs.h"
 #include "scripting/flash/ui/keycodes.h"
-#include "scripting/flash/display/DisplayObject.h"
 #include <vector>
 #include <deque>
 
@@ -80,7 +79,7 @@ private:
 		MATRIX m;
 		MaskData(DisplayObject* _d, const MATRIX& _m):d(_d),m(_m){}
 	};
-	_NR<InteractiveObject> getMouseTarget(uint32_t x, uint32_t y, DisplayObject::HIT_TYPE type);
+	_NR<InteractiveObject> getMouseTarget(uint32_t x, uint32_t y, HIT_TYPE type);
 	void handleMouseDown(uint32_t x, uint32_t y, SDL_Keymod buttonState,bool pressed);
 	void handleMouseDoubleClick(uint32_t x, uint32_t y, SDL_Keymod buttonState,bool pressed);
 	void handleMouseUp(uint32_t x, uint32_t y, SDL_Keymod buttonState, bool pressed, uint8_t button);

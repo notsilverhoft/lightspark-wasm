@@ -25,6 +25,8 @@
 #include "scripting/argconv.h"
 #include "scripting/abc.h"
 #include "backends/rendering.h"
+#include "platforms/engineutils.h"
+
 
 using namespace std;
 using namespace lightspark;
@@ -90,8 +92,8 @@ bool Stage3D::countCylicMemberReferences(garbagecollectorstate &gcstate)
 void Stage3D::sinit(Class_base *c)
 {
 	CLASS_SETUP(c, EventDispatcher, _constructor, CLASS_SEALED);
-	c->setDeclaredMethodByQName("requestContext3D","",Class<IFunction>::getFunction(c->getSystemState(),requestContext3D),NORMAL_METHOD,true);
-	c->setDeclaredMethodByQName("requestContext3DMatchingProfiles","",Class<IFunction>::getFunction(c->getSystemState(),requestContext3DMatchingProfiles),NORMAL_METHOD,true);
+	c->setDeclaredMethodByQName("requestContext3D","",c->getSystemState()->getBuiltinFunction(requestContext3D),NORMAL_METHOD,true);
+	c->setDeclaredMethodByQName("requestContext3DMatchingProfiles","",c->getSystemState()->getBuiltinFunction(requestContext3DMatchingProfiles),NORMAL_METHOD,true);
 	REGISTER_GETTER_SETTER_RESULTTYPE(c,x,Number);
 	REGISTER_GETTER_SETTER_RESULTTYPE(c,y,Number);
 	REGISTER_GETTER_SETTER_RESULTTYPE(c,visible,Boolean);

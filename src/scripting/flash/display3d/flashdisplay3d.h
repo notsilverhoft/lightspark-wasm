@@ -25,7 +25,6 @@
 #include "scripting/flash/events/flashevents.h"
 #include "scripting/flash/display3d/flashdisplay3dtextures.h"
 #include <map>
-#include "platforms/engineutils.h"
 
 enum RegisterType {
 	ATTRIBUTE = 0,
@@ -101,6 +100,7 @@ class RenderContext;
 class VertexBuffer3D;
 class Program3D;
 class Stage3D;
+class EngineData;
 
 enum RENDER_ACTION { RENDER_CLEAR,RENDER_CONFIGUREBACKBUFFER,RENDER_RENDERTOBACKBUFFER,RENDER_TOTEXTURE,
 					 RENDER_SETPROGRAM,RENDER_UPLOADPROGRAM,RENDER_DELETEPROGRAM,
@@ -152,10 +152,6 @@ private:
 	uint32_t backframebufferID[2];
 	uint32_t backDepthRenderBuffer[2];
 	uint32_t backStencilRenderBuffer[2];
-
-	uint32_t textureframebuffer;
-	uint32_t depthRenderBuffer;
-	uint32_t stencilRenderBuffer;
 
 	Program3D* currentprogram;
 	uint32_t currenttextureid;

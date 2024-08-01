@@ -114,8 +114,6 @@ void Bitmap::prepareShutdown()
 void Bitmap::setOnStage(bool staged, bool force, bool inskipping)
 {
 	DisplayObject::setOnStage(staged,force,inskipping);
-	if (bitmapData && isOnStage())
-		bitmapData->checkForUpload();
 }
 
 void Bitmap::sinit(Class_base* c)
@@ -176,8 +174,6 @@ ASFUNCTIONBODY_GETTER_SETTER_CB(Bitmap,pixelSnapping,onPixelSnappingChanged)
 
 void Bitmap::updatedData()
 {
-	if (this->isOnStage())
-		bitmapData->checkForUpload();
 	hasChanged=true;
 	requestInvalidation(getSystemState());
 }
@@ -211,7 +207,7 @@ bool Bitmap::boundsRect(number_t& xmin, number_t& xmax, number_t& ymin, number_t
 	return true;
 }
 
-_NR<DisplayObject> Bitmap::hitTestImpl(const Vector2f&, const Vector2f& localPoint, DisplayObject::HIT_TYPE type,bool interactiveObjectsOnly)
+_NR<DisplayObject> Bitmap::hitTestImpl(const Vector2f&, const Vector2f& localPoint, HIT_TYPE type,bool interactiveObjectsOnly)
 {
 	//Simple check inside the area, opacity data should not be considered
 	//NOTE: on the X axis the 0th line must be ignored, while the one past the width is valid
@@ -264,7 +260,5 @@ IDrawable *Bitmap::invalidate(bool smoothing)
 }
 void Bitmap::invalidateForRenderToBitmap(RenderDisplayObjectToBitmapContainer* container)
 {
-	if (bitmapData)
-		bitmapData->checkForUpload();
 	DisplayObject::invalidateForRenderToBitmap(container);
 }

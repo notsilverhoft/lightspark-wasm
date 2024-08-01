@@ -58,16 +58,6 @@ class ByteArray;
 class NativeMenuItem;
 class InteractiveObject;
 
-enum DEPTHSTENCIL_FUNCTION { DEPTHSTENCIL_ALWAYS, DEPTHSTENCIL_EQUAL, DEPTHSTENCIL_GREATER, DEPTHSTENCIL_GREATER_EQUAL, DEPTHSTENCIL_LESS, DEPTHSTENCIL_LESS_EQUAL, DEPTHSTENCIL_NEVER, DEPTHSTENCIL_NOT_EQUAL };
-enum DEPTHSTENCIL_OP { DEPTHSTENCIL_KEEP, DEPTHSTENCIL_ZERO, DEPTHSTENCIL_REPLACE, DEPTHSTENCIL_INCR, DEPTHSTENCIL_INCR_WRAP, DEPTHSTENCIL_DECR, DEPTHSTENCIL_DECR_WRAP, DEPTHSTENCIL_INVERT };
-enum TRIANGLE_FACE { FACE_BACK, FACE_FRONT, FACE_FRONT_AND_BACK, FACE_NONE };
-enum BLEND_FACTOR { BLEND_ONE,BLEND_ZERO,BLEND_SRC_ALPHA,BLEND_SRC_COLOR,BLEND_DST_ALPHA,BLEND_DST_COLOR,BLEND_ONE_MINUS_SRC_ALPHA,BLEND_ONE_MINUS_SRC_COLOR,BLEND_ONE_MINUS_DST_ALPHA,BLEND_ONE_MINUS_DST_COLOR };
-enum VERTEXBUFFER_FORMAT { BYTES_4=0, FLOAT_1, FLOAT_2, FLOAT_3, FLOAT_4 };
-enum CLEARMASK { COLOR = 0x1, DEPTH = 0x2, STENCIL = 0x4 };
-enum TEXTUREFORMAT { BGRA, BGRA_PACKED, BGR_PACKED, COMPRESSED, COMPRESSED_ALPHA, RGBA_HALF_FLOAT,BGR };
-enum TEXTUREFORMAT_COMPRESSED { UNCOMPRESSED, DXT5, DXT1 };
-enum SAMPLEPOSITION { SAMPLEPOS_STANDARD=0,SAMPLEPOS_BLEND=1,SAMPLEPOS_FILTER=2,SAMPLEPOS_FILTER_DST=3 };
-
 // this is only used for font rendering in PPAPI plugin
 class externalFontRenderer : public IDrawable
 {
@@ -108,8 +98,9 @@ protected:
 	std::vector<_R<NativeMenuItem>> currentcontextmenuitems;
 	_NR<InteractiveObject> contextmenuDispatcher;
 	_NR<InteractiveObject> contextmenuOwner;
+	SDL_GLContext mSDLContext;
 	void selectContextMenuItemIntern();
-	virtual SDL_Window* createWidget(uint32_t w,uint32_t h)=0;
+	virtual SDL_Window* createWidget(uint32_t w,uint32_t h);
 public:
 	bool incontextmenupreparing; // needed for PPAPI plugin only
 	SDL_Window* widget;
@@ -132,6 +123,7 @@ public:
 	bool startInFullScreenMode;
 	double startscalefactor;
 	tiny_string driverInfoString;
+	tiny_string platformOS;
 	int maxTextureSize;
 	uint32_t context3dProfile;
 	std::vector<TEXTUREFORMAT_COMPRESSED> compressed_texture_formats;
@@ -142,26 +134,24 @@ public:
 	/* you may not call getWindowForGnash and showWindow on the same EngineData! */
 	virtual uint32_t getWindowForGnash()=0;
 	/* Runs 'func' in the mainLoopThread */
-	virtual void runInMainThread(SystemState* sys, void (*func) (SystemState*) )
-	{
-		SDL_Event event;
-		SDL_zero(event);
-		event.type = LS_USEREVENT_EXEC;
-		event.user.data1 = (void*)func;
-		SDL_PushEvent(&event);
-	}
+	virtual void runInMainThread(SystemState* sys, void (*func) (SystemState*) );
 	static bool mainloop_handleevent(SDL_Event* event,SystemState* sys);
 	static void mainloop_from_plugin(SystemState* sys);
 
 	// this is called when going to fulllscreen mode or opening a context menu from plugin, to keep handling of SDL events alive
 	void startSDLEventTicker(SystemState *sys);
 	void resetSDLEventTicker() { sdleventtickjob=nullptr; }
-	
+
+	SDL_Window* createMainSDLWidget(uint32_t w, uint32_t h);
+	SDL_GLContext createSDLGLContext(SDL_Window* widget);
+	void deleteSDLGLContext(SDL_GLContext ctx);
 	/* This function must be called from mainLoopThread
 	 * It fills this->widget and this->window.
 	 */
 	void showWindow(uint32_t w, uint32_t h);
 
+	static void checkForNativeAIRExtensions(std::vector<tiny_string>& extensions, char* fileName);
+	void addQuitEvent();
 	// local storage handling
 	virtual void setLocalStorageAllowedMarker(bool allowed);
 	virtual bool getLocalStorageAllowedMarker();
@@ -225,17 +215,17 @@ public:
 	static void setMouseCursor(SystemState *sys, const tiny_string& name);
 	static tiny_string getMouseCursor(SystemState *sys);
 	virtual void setClipboardText(const std::string txt);
-	virtual bool getScreenData(SDL_DisplayMode* screen) = 0;
-	virtual double getScreenDPI() = 0;
-	virtual void setWindowPosition(int x, int y, uint32_t width, uint32_t height) {}
-	virtual void getWindowPosition(int* x, int* y) { *x=0; *y=0;}
+	virtual bool getScreenData(SDL_DisplayMode* screen);
+	virtual double getScreenDPI();
+	virtual void setWindowPosition(int x, int y, uint32_t width, uint32_t height);
+	virtual void getWindowPosition(int* x, int* y);
 	virtual bool getAIRApplicationDescriptor(SystemState* sys,tiny_string& xmlstring) { return false;}
 	virtual StreamCache* createFileStreamCache(SystemState *sys);
 	
 	// OpenGL methods
-	virtual void DoSwapBuffers() = 0;
-	virtual void InitOpenGL() = 0;
-	virtual void DeinitOpenGL() = 0;
+	virtual void DoSwapBuffers();
+	virtual void InitOpenGL();
+	virtual void DeinitOpenGL();
 	virtual bool getGLError(uint32_t& errorCode) const;
 	virtual tiny_string getGLDriverInfo();
 	virtual void getGlCompressedTextureFormats();

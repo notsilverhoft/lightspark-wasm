@@ -36,6 +36,7 @@
 #include <string>
 #include "swftypes.h"
 #include "memory_support.h"
+#include "scripting/abcutils.h"
 
 using namespace std;
 
@@ -76,6 +77,7 @@ class ThreadPool;
 class TimerThread;
 class LocalConnectionEvent;
 class ABCVm;
+class Function;
 
 enum class FramePhase
 {
@@ -113,7 +115,7 @@ public:
 	void plot(uint32_t max, cairo_t *cr);
 };
 
-class SystemState: public ITickJob, public InvalidateQueue
+class DLL_PUBLIC SystemState: public ITickJob, public InvalidateQueue
 {
 private:
 	class EngineCreator: public IThreadJob
@@ -258,6 +260,7 @@ public:
 	const FLASH_MODE flashMode;
 	uint32_t swffilesize;
 	asAtom nanAtom;
+	ATOMIC_INT32(instanceCounter); // used to create unique instanceX names for AVM1
 	// the global object for AVM1
 	Global* avm1global;
 	void setupAVM1();
@@ -518,9 +521,10 @@ public:
 	void resetParentList();
 	bool isInResetParentList(DisplayObject* d);
 	void removeFromResetParentList(DisplayObject* d);
+	ASObject* getBuiltinFunction(as_atom_function v, int len = 0, Class_base* returnType=nullptr, Class_base* returnTypeAllArgsInt=nullptr);
 };
 
-class ParseThread: public IThreadJob
+class DLL_PUBLIC ParseThread: public IThreadJob
 {
 public:
 	int version;

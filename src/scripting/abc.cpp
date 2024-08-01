@@ -23,6 +23,8 @@
 
 #include "compat.h"
 #include "scripting/flash/display/RootMovieClip.h"
+#include "scripting/flash/display/Stage.h"
+#include "scripting/toplevel/toplevel.h"
 #include <algorithm>
 
 #ifdef LLVM_ENABLED
@@ -79,6 +81,7 @@
 #include "scripting/abc.h"
 #include "backends/rendering.h"
 #include "parsing/tags.h"
+#include "scripting/toplevel/Array.h"
 #include "scripting/toplevel/ASQName.h"
 #include "scripting/toplevel/Global.h"
 #include "scripting/toplevel/Namespace.h"
@@ -135,6 +138,7 @@ void ABCVm::registerClasses()
 	registerClassesFlashSensors(builtin);
 	registerClassesFlashErrors(builtin);
 	registerClassesFlashPrinting(builtin);
+	registerClassesFlashProfiler(builtin);
 	registerClassesFlashGlobalization(builtin);
 	registerClassesFlashDesktop(builtin);
 	registerClassesFlashFilesystem(builtin);
@@ -1150,7 +1154,6 @@ void ABCVm::handleEvent(std::pair<_NR<EventDispatcher>, _R<Event> > e)
 			case ADVANCE_FRAME:
 			{
 				m_sys->setFramePhase(FramePhase::ADVANCE_FRAME);
-				Locker l(m_sys->getRenderThread()->mutexRendering);
 				AdvanceFrameEvent* ev=static_cast<AdvanceFrameEvent*>(e.second.getPtr());
 				DisplayObject* clip = !ev->clip.isNull() ? ev->clip.getPtr() : m_sys->stage;
 				LOG(LOG_CALLS,"ADVANCE_FRAME");
@@ -1205,6 +1208,13 @@ void ABCVm::handleEvent(std::pair<_NR<EventDispatcher>, _R<Event> > e)
 //						ASObject::dumpObjectCounters(100);
 #endif
 				}
+				break;
+			}
+			case GETMOUSETARGET_EVENT:
+			{
+				GetMouseTargetEvent* ev=static_cast<GetMouseTargetEvent*>(e.second.getPtr());
+				Vector2f point(ev->x, ev->y);
+				ev->dispobj=m_sys->stage->hitTest(point, point, ev->type,true);
 				break;
 			}
 			case FLUSH_EVENT_BUFFER:

@@ -33,7 +33,8 @@ namespace lightspark
 
 enum EVENT_TYPE { EVENT=0, BIND_CLASS, SHUTDOWN, SYNC, MOUSE_EVENT,
 	FUNCTION,FUNCTION_ASYNC, EXTERNAL_CALL, CONTEXT_INIT, INIT_FRAME,
-	FLUSH_INVALIDATION_QUEUE, FLUSH_EVENT_BUFFER, ADVANCE_FRAME, PARSE_RPC_MESSAGE,EXECUTE_FRAMESCRIPT,TEXTINPUT_EVENT,IDLE_EVENT,AVM1INITACTION_EVENT,SET_LOADER_CONTENT_EVENT,ROOTCONSTRUCTEDEVENT, LOCALCONNECTIONEVENT };
+	FLUSH_INVALIDATION_QUEUE, FLUSH_EVENT_BUFFER, ADVANCE_FRAME, PARSE_RPC_MESSAGE,EXECUTE_FRAMESCRIPT,TEXTINPUT_EVENT,IDLE_EVENT,
+	AVM1INITACTION_EVENT,SET_LOADER_CONTENT_EVENT,ROOTCONSTRUCTEDEVENT, LOCALCONNECTIONEVENT,GETMOUSETARGET_EVENT };
 
 class ABCContext;
 class DictionaryTag;
@@ -129,6 +130,7 @@ public:
 	ASFUNCTION_GETTER_SETTER(shiftKey);
 	ASFUNCTION_ATOM(updateAfterEvent);
 	uint32_t getSDLScanCode() const { return sdlScanCode; }
+	uint32_t getCharCode() const { return charCode; }
 	uint32_t getKeyCode() const { return keyCode; }
 	uint32_t getModifiers() const { return modifiers; }
 	SDL_Keycode getSDLKeyCode() const { return sdlkeycode; }
@@ -373,9 +375,16 @@ public:
 
 class StatusEvent: public Event
 {
+private:
+	Event* cloneImpl() const override;
 public:
-	StatusEvent(ASWorker* wrk, Class_base* c) : Event(wrk,c, "StatusEvent") {}
+	StatusEvent(ASWorker* wrk, Class_base* c, const tiny_string& _code="", const tiny_string& _level=""):Event(wrk,c, "status"),
+		code(_code),level(_level)
+	{
+	}
 	static void sinit(Class_base*);
+	ASPROPERTY_GETTER_SETTER(tiny_string, code);
+	ASPROPERTY_GETTER_SETTER(tiny_string, level);
 };
 
 class DataEvent: public TextEvent
@@ -561,6 +570,17 @@ class IdleEvent: public WaitableEvent
 public:
 	IdleEvent(): WaitableEvent("IdleEvent") {}
 	EVENT_TYPE getEventType() const override { return IDLE_EVENT; }
+};
+
+class GetMouseTargetEvent: public WaitableEvent
+{
+public:
+	uint32_t x;
+	uint32_t y;
+	HIT_TYPE type;
+	_NR<DisplayObject> dispobj;
+	GetMouseTargetEvent(uint32_t _x, uint32_t _y, HIT_TYPE _type);
+	EVENT_TYPE getEventType() const override { return GETMOUSETARGET_EVENT; }
 };
 
 class FlushEventBufferEvent: public Event

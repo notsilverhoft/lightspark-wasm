@@ -21,7 +21,7 @@
 #define SCRIPTING_FLASH_DISPLAY_ROOTMOVIECLIP_H 1
 
 #include "parsing/tags.h"
-#include "scripting/flash/display/flashdisplay.h"
+#include "scripting/flash/display/MovieClip.h"
 
 
 namespace lightspark
@@ -79,6 +79,7 @@ public:
 	bool hasSymbolClass;
 	bool hasMainClass;
 	bool usesActionScript3;
+	bool completionHandled;
 	RGB getBackground();
 	void setBackground(const RGB& bg);
 	void setFrameSize(const RECT& f);
