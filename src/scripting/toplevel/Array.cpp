@@ -1472,6 +1472,10 @@ ASFUNCTIONBODY_ATOM(Array,sortOn)
 			th->data_first.push_back(ittmp->dataAtom);
 		else
 			th->data_second[i] = ittmp->dataAtom;
+		for (auto itsv = ittmp->sortvalues.begin(); itsv != ittmp->sortvalues.end(); itsv++)
+		{
+			ASATOM_DECREF(*itsv);
+		}
 		i++;
 	}
 	// according to spec sortOn should return "nothing"(?), but it seems that the array is returned
@@ -2048,17 +2052,7 @@ bool Array::isIntegerWithoutLeadingZeros(const tiny_string& value)
 		return false;
 	else if (value == "0")
 		return true;
-
-	bool first = true;
-	for (CharIterator it=value.begin(); it!=value.end(); ++it)
-	{
-		if (!it.isdigit() || (first && *it == '0'))
-			return false;
-
-		first = false;
-	}
-	
-	return true;
+	return (value.isIntegerValue() && *(value.begin()) != '0');
 }
 
 multiname *Array::setVariableByMultiname(multiname& name, asAtom& o, CONST_ALLOWED_FLAG allowConst, bool* alreadyset,ASWorker* wrk)

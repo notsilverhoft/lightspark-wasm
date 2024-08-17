@@ -348,8 +348,12 @@ private:
 	struct timeval last_garbagecollection;
 	std::vector<ABCContext*> contexts;
 public:
+	Stage* stage; // every worker has its own stage. In case of the primordial worker this points to the stage of the SystemState.
 	asfreelist* freelist;
 	asfreelist freelist_syntheticfunction;
+	asfreelist freelist_activationobject;
+	asfreelist freelist_asobject;
+	
 	ASWorker(SystemState* s); // constructor for primordial worker only to be used in SystemState constructor
 	ASWorker(Class_base* c);
 	ASWorker(ASWorker* wrk,Class_base* c);

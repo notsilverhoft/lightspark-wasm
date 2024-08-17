@@ -211,6 +211,7 @@ void Class_base::copyBorrowedTraits(Class_base* src)
 		ASATOM_INCREF(v.getter);
 		ASATOM_INCREF(v.setter);
 		borrowedVariables.Variables.insert(make_pair(i->first,v));
+		borrowedVariables.currentnameindex=UINT32_MAX;
 	}
 }
 
@@ -423,7 +424,7 @@ void Class_base::setConstructor(ASObject* c)
 }
 void Class_base::handleConstruction(asAtom& target, asAtom* args, unsigned int argslen, bool buildAndLink, bool _explicit)
 {
-	if (!asAtomHandler::isObject(target))
+	if (!asAtomHandler::isObject(target) || asAtomHandler::is<Class_base>(target))
 		return;
 	ASObject* t = asAtomHandler::getObjectNoCheck(target);
 	if(buildAndLink)

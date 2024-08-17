@@ -2255,14 +2255,14 @@ DisplayObjectContainer* DisplayObject::findCommonAncestor(DisplayObject* d, int&
 
 // Compute the minimal, axis aligned bounding box in global
 // coordinates
-bool DisplayObject::boundsRectGlobal(number_t& xmin, number_t& xmax, number_t& ymin, number_t& ymax)
+bool DisplayObject::boundsRectGlobal(number_t& xmin, number_t& xmax, number_t& ymin, number_t& ymax, bool fromcurrentrendering)
 {
 	number_t x1, x2, y1, y2;
 	if (!boundsRect(x1, x2, y1, y2,false))
 		return false;
 
-	localToGlobal(x1, y1, x1, y1);
-	localToGlobal(x2, y2, x2, y2);
+	localToGlobal(x1, y1, x1, y1, fromcurrentrendering);
+	localToGlobal(x2, y2, x2, y2, fromcurrentrendering);
 
 	if (!loadedFrom->usesActionScript3 && getRoot())
 	{
@@ -2289,14 +2289,14 @@ ASFUNCTIONBODY_ATOM(DisplayObject,hitTestObject)
 	_NR<DisplayObject> another;
 	ARG_CHECK(ARG_UNPACK(another));
 	number_t xmin = 0, xmax, ymin = 0, ymax;
-	if (!th->boundsRectGlobal(xmin, xmax, ymin, ymax))
+	if (!th->boundsRectGlobal(xmin, xmax, ymin, ymax, false))
 	{
 		asAtomHandler::setBool(ret,false);
 		return;
 	}
 
 	number_t xmin2, xmax2, ymin2, ymax2;
-	if (!another->boundsRectGlobal(xmin2, xmax2, ymin2, ymax2))
+	if (!another->boundsRectGlobal(xmin2, xmax2, ymin2, ymax2, false))
 	{
 		asAtomHandler::setBool(ret,false);
 		return;
@@ -2342,7 +2342,7 @@ ASFUNCTIONBODY_ATOM(DisplayObject,hitTestPoint)
 
 		number_t localX;
 		number_t localY;
-		th->globalToLocal(x, y, localX, localY);
+		th->globalToLocal(x, y, localX, localY,false);
 		if (!th->isOnStage())
 		{
 			// if the DisplayObject is not on stage the local bounds have to be added for hittesting
@@ -2735,7 +2735,7 @@ ASFUNCTIONBODY_ATOM(DisplayObject,AVM1_getBounds)
 {
 	DisplayObject* th=asAtomHandler::as<DisplayObject>(obj);
 
-	ASObject* o =  Class<ASObject>::getInstanceS(wrk);
+	ASObject* o =  new_asobject(wrk);
 	ret = asAtomHandler::fromObject(o);
 	DisplayObject* target= th;
 	if(argslen>=1) // contrary to spec adobe allows getBounds with zero parameters

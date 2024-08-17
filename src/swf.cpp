@@ -334,6 +334,7 @@ SystemState::SystemState(uint32_t fileSize, FLASH_MODE mode):
 	stage=Class<Stage>::getInstanceS(this->worker);
 	stage->setRefConstant();
 	stage->setRoot(_MR(mainClip));
+	worker->stage=stage;
 	//Get starting time
 	startTime=compat_msectiming();
 	
@@ -386,7 +387,7 @@ void SystemState::parseParametersFromFlashvars(const char* v)
 
 	_NR<ASObject> params=getParameters();
 	if(params.isNull())
-		params=_MNR(Class<ASObject>::getInstanceS(this->worker));
+		params=_MNR(new_asobject(this->worker));
 	//Add arguments to SystemState
 	string vars(v);
 	uint32_t cur=0;
@@ -462,7 +463,7 @@ void SystemState::parseParametersFromFile(const char* f)
 		LOG(LOG_ERROR,"Parameters file not found");
 		return;
 	}
-	_R<ASObject> ret=_MR(Class<ASObject>::getInstanceS(this->worker));
+	_R<ASObject> ret=_MR(new_asobject(this->worker));
 	while(!i.eof())
 	{
 		string name,value;
@@ -480,7 +481,7 @@ void SystemState::parseParametersFromURL(const URLInfo& url)
 {
 	_NR<ASObject> params=getParameters();
 	if(params.isNull())
-		params=_MNR(Class<ASObject>::getInstanceS(this->worker));
+		params=_MNR(new_asobject(this->worker));
 
 	parseParametersFromURLIntoObject(url, params);
 	setParameters(params);
@@ -1674,6 +1675,9 @@ void ParseThread::parseSWF(UI8 ver)
 		{
 			root->incRef();
 			applicationDomain->getInstanceWorker()->rootClip = _MR(root);
+			applicationDomain->getInstanceWorker()->stage = Class<Stage>::getInstanceSNoArgs(applicationDomain->getInstanceWorker());
+			root->incRef();
+			applicationDomain->getInstanceWorker()->stage->setRoot(_MR(root));
 		}
 		parsedObject=_MNR(root);
 		if(!url.empty())
@@ -2109,7 +2113,6 @@ void SystemState::runInnerGotoFrame(DisplayObject* innerClip, const std::vector<
 	setFramePhase(FramePhase::EXIT_FRAME);
 	handleBroadcastEvent("exitFrame");
 
-	stage->cleanupDeadHiddenObjects();
 	setFramePhase(oldPhase);
 	--innerGotoCount;
 }
@@ -2166,8 +2169,6 @@ void SystemState::tick()
 
 		/* Step 6: dispatch exitFrame event */
 		addBroadcastEvent("exitFrame");
-
-		stage->cleanupDeadHiddenObjects();
 	}
 	/* Step 7: dispatch render event (Assuming stage.invalidate() has been called) */
 	if (stage->invalidated)

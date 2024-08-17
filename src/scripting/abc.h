@@ -526,6 +526,7 @@ private:
 	void parseRPCMessage(_R<ByteArray> message, _NR<ASObject> client, _NR<Responder> responder);
 	
 	static void constructpropnoargs_intern(call_context* context, asAtom& ret, asAtom& obj, multiname* name, ASObject *constructor);
+	static void constructpropMultiArgs_intern(call_context* context,asAtom& ret,asAtom& obj);
 	static void construct_noargs_intern(call_context* context, asAtom& ret, asAtom& obj);
 
 #ifdef LLVM_ENABLED
@@ -654,6 +655,14 @@ private:
 	static void abc_pushwith(call_context* context);
 	static void abc_popscope(call_context* context);
 	static void abc_nextname(call_context* context);
+	static void abc_nextname_constant_constant(call_context* context);
+	static void abc_nextname_local_constant(call_context* context);
+	static void abc_nextname_constant_local(call_context* context);
+	static void abc_nextname_local_local(call_context* context);
+	static void abc_nextname_constant_constant_localresult(call_context* context);
+	static void abc_nextname_local_constant_localresult(call_context* context);
+	static void abc_nextname_constant_local_localresult(call_context* context);
+	static void abc_nextname_local_local_localresult(call_context* context);
 	static void abc_hasnext(call_context* context);
 
 	static void abc_pushnull(call_context* context);// 0x20
@@ -807,6 +816,10 @@ private:
 	static void abc_constructsuper_constant(call_context* context);
 	static void abc_constructsuper_local(call_context* context);
 	static void abc_constructprop(call_context* context);
+	static void abc_constructpropMultiArgs_constant(call_context* context);
+	static void abc_constructpropMultiArgs_local(call_context* context);
+	static void abc_constructpropMultiArgs_constant_localresult(call_context* context);
+	static void abc_constructpropMultiArgs_local_localresult(call_context* context);
 	static void abc_constructpropStaticName_constant(call_context* context);
 	static void abc_constructpropStaticName_local(call_context* context);
 	static void abc_constructpropStaticName_constant_localresult(call_context* context);
@@ -843,6 +856,7 @@ private:
 	static void abc_sxi16_local_localresult(call_context* context);
 	static void abc_constructgenerictype(call_context* context);
 	static void abc_newobject(call_context* context);
+	static void abc_newobject_noargs_localresult(call_context* context);
 	static void abc_newarray(call_context* context);
 	static void abc_newactivation(call_context* context);
 	static void abc_newclass(call_context* context);
@@ -917,6 +931,8 @@ private:
 	static void abc_getslot_local_localresult(call_context* context);
 	static void abc_getslot_constant_setslotnocoerce(call_context* context);
 	static void abc_getslot_local_setslotnocoerce(call_context* context);
+	static void abc_getSlotFromScopeObject(call_context* context);
+	static void abc_getSlotFromScopeObject_localresult(call_context* context);
 
 	static void abc_setslot(call_context* context);
 	static void abc_setslot_constant_constant(call_context* context);

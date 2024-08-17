@@ -1941,6 +1941,7 @@ void ABCVm::findPropStrictCache(asAtom &ret, call_context* th)
 			instrptr->cacheobj1->incRef();
 			ret = asAtomHandler::fromObject(instrptr->cacheobj1);
 		}
+		LOG_CALL( "findPropStrictCache cached " << asAtomHandler::toDebugString(ret));
 		return;
 	}
 	multiname* name=th->mi->context->getMultiname(t,th);
@@ -2161,13 +2162,21 @@ void ABCVm::callSuper(call_context* th, int n, int m, method_info** called_mi, b
 		createError<TypeError>(th->worker,kConvertUndefinedToObjectError);
 		return;
 	}
-
-	assert_and_throw(th->function->inClass);
-	assert_and_throw(th->function->inClass->super);
-	assert_and_throw(obj->getClass());
-	assert_and_throw(obj->getClass()->isSubClass(th->function->inClass));
+	
 	asAtom f=asAtomHandler::invalidAtom;
-	obj->getVariableByMultinameIntern(f,*name,th->function->inClass->super.getPtr(),GET_VARIABLE_OPTION::NONE, th->worker);
+	if (th->function->fromNewFunction)
+	{
+		assert_and_throw(obj->getClass());
+		obj->getVariableByMultinameIntern(f,*name,obj->getClass(),GET_VARIABLE_OPTION::NONE, th->worker);
+	}
+	else
+	{
+		assert_and_throw(th->function->inClass);
+		assert_and_throw(th->function->inClass->super);
+		assert_and_throw(obj->getClass());
+		assert_and_throw(obj->getClass()->isSubClass(th->function->inClass));
+		obj->getVariableByMultinameIntern(f,*name,th->function->inClass->super.getPtr(),GET_VARIABLE_OPTION::NONE, th->worker);
+	}
 	name->resetNameIfObject();
 	if(asAtomHandler::isValid(f))
 	{
@@ -2508,17 +2517,18 @@ void ABCVm::newObject(call_context* th, int n)
 {
 	th->explicitConstruction = true;
 	LOG_CALL("newObject " << n);
-	ASObject* ret=Class<ASObject>::getInstanceS(th->worker);
+	ASObject* ret=new_asobject(th->worker);
 	//Duplicated keys overwrite the previous value
-	multiname propertyName(nullptr);
-	propertyName.name_type=multiname::NAME_STRING;
 	for(int i=0;i<n;i++)
 	{
 		RUNTIME_STACK_POP_CREATE(th,value);
 		RUNTIME_STACK_POP_CREATE(th,name);
 		uint32_t nameid=asAtomHandler::toStringId(*name,th->worker);
+		bool isInt = asAtomHandler::isInteger(*name);
+		if (!isInt && asAtomHandler::isString(*name))
+			isInt = Array::isIntegerWithoutLeadingZeros(asAtomHandler::toString(*name,th->worker));
 		ASATOM_DECREF_POINTER(name);
-		ret->setDynamicVariableNoCheck(nameid,*value);
+		ret->setDynamicVariableNoCheck(nameid,*value,isInt);
 	}
 
 	RUNTIME_STACK_PUSH(th,asAtomHandler::fromObject(ret));
@@ -2807,6 +2817,7 @@ void ABCVm::newClass(call_context* th, int n)
 		constructorFunc->acquireScope(ret->class_scope);
 		constructorFunc->addToScope(scope_entry(asAtomHandler::fromObject(ret),false));
 		constructorFunc->inClass = ret;
+		constructorFunc->isStatic = true;
 		//add Constructor the the class methods
 		ret->constructor=constructorFunc;
 	}
@@ -2912,7 +2923,6 @@ void ABCVm::swap()
 
 ASObject* ABCVm::newActivation(call_context* th, method_info* mi)
 {
-	LOG_CALL("newActivation");
 	//TODO: Should method traits be added to the activation context?
 	ASObject* act= nullptr;
 	ASObject* caller = asAtomHandler::getObject(th->locals[0]);
@@ -2931,6 +2941,7 @@ ASObject* ABCVm::newActivation(call_context* th, method_info* mi)
 #ifndef NDEBUG
 	act->initialized=true;
 #endif
+	LOG_CALL("newActivation:"<<act->toDebugString());
 	return act;
 }
 
@@ -3098,7 +3109,7 @@ ASObject* ABCVm::pushString(call_context* th, int n)
 
 ASObject* ABCVm::newCatch(call_context* th, int n)
 {
-	ASObject* catchScope = Class<ASObject>::getInstanceS(th->worker);
+	ASObject* catchScope = new_asobject(th->worker);
 	assert_and_throw(n >= 0 && (unsigned int)n < th->mi->body->exceptions.size());
 	multiname* name = th->mi->context->getMultiname(th->mi->body->exceptions[n].var_name, nullptr);
 	catchScope->setVariableByMultiname(*name, asAtomHandler::undefinedAtom,ASObject::CONST_NOT_ALLOWED,nullptr,th->worker);
