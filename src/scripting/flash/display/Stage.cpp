@@ -660,7 +660,8 @@ void Stage::cleanupDeadHiddenObjects()
 void Stage::prepareForRemoval(DisplayObject* d)
 {
 	Locker l(DisplayObjectRemovedMutex);
-	removedDisplayObjects.insert(d);
+	if (!removedDisplayObjects.insert(d).second)
+		d->removeStoredMember();
 }
 
 void Stage::cleanupRemovedDisplayObjects()
