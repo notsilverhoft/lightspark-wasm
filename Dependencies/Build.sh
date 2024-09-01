@@ -16,7 +16,7 @@ pip3 install meson==1.4.0
     
     else
     wget http://ftp.us.debian.org/debian/pool/main/a/autoconf/autoconf_2.71-3_all.deb && sudo dpkg -i autoconf_2.71-3_all.deb
-    
+    sudo rm autoconf_2.71-3_all.deb
     fi
     
 
@@ -145,6 +145,10 @@ clear
         cd $working_dir
         cp -r $working_dir/pango-cairo-wasm/build $working_dir/PKGCONFIG/pango-cairo-wasm/build
         pango_cairo_wasm_dir=$working_dir/PKGCONFIG/pango-cairo-wasm/build/lib/pkgconfig
+        clear
+        echo "Removing build directory for PangoCairoPack"
+        sleep 4
+        sudo rm -r pango-cairo-wasm
         clear
 
     #FFmpeg
