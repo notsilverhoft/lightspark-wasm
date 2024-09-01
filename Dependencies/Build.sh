@@ -67,8 +67,9 @@ echo $working_dir
             echo "PangoCairoPack: Not Found... Cloning." 
             git clone https://github.com/notsilverhoft/pango-cairo-wasm.git > /dev/null 2>&1
             cd pango-cairo-wasm
-            git submodule init > /dev/null 2>&1
-            git submodule update > /dev/null 2>&1
+            echo "Cloning Submodules... Please wait!"
+            git submodule update --init > /dev/null 2>&1
+            clear
             cd $working_dir
             echo "PangoCairoPack: Done... Continue."
 
@@ -105,24 +106,45 @@ clear
         cp -r $working_dir/liblzma/build $working_dir/PKGCONFIG/lzma/build
         lzma_dir=$working_dir/PKGCONFIG/lzma/build/lib/pkgconfig
         clear
+        echo "Removing build directory for Lzma..."
+        sleep 4
+        sudo rm -r liblzma
+        clear
 
     #Pango/Cairo/Freetype/Fribidi/Glib/Harfbuzz/Expat/Ffi/Png/Pixman/Zlib:
         echo "Build: Target Is PangoCairoPack..."
         sleep 4
         cd pango-cairo-wasm
+        sudo dockerd > /dev/null 2>&1
+        sudo docker build --progress=plain --no-cache -t 'pangocairowasm' .
+        sleep 6
+        clear
+        echo "Removing pangocairowasm dir..."
+        cd $working_dir
+        sudo rm -r pango-cairo-wasm
+        echo "Setting variables..."
+        image=pangocairowasm
+        container_id=$(docker create "$image")
+        source_path=/magic
+        destination_path=$working_dir/pango-cairo-wasm
+        clear
+        sleep 2
+        echo "Downloading from Docker..."
         sleep 4
-        sudo apt install ragel byacc flex autoconf automake lbzip2 gperf gettext autogen libtool meson \
-        ninja-build pkg-config cmake magic -y
-        export magicdir=$working_dir/pango-cairo-wasm
-        echo "Build: 'Note: Please be aware that this collection of libraries takes a while to build, so please be patient!'"
-        sleep 4
-        bash build.sh
+        docker cp "$container_id:$source_path" "$destination_path"
+        clear
+        echo "Cleaning up..."
+        docker rm "$container_id"
+        yes Y | docker rmi pangociarowasm
+        yes Y | docker builder prune
+        sleep 2
+        clear
+        echo "Setting up env variables..."
         cd $working_dir/PKGCONFIG
         mkdir pango-cairo-wasm
         cd $working_dir
-        cp -r  $working_dir/pango-cairo-wasm/build $working_dir/PKGCONFIG/pango-cairo-wasm/build
+        cp -r $working_dir/pango-cairo-wasm/build $working_dir/PKGCONFIG/pango-cairo-wasm/build
         pango_cairo_wasm_dir=$working_dir/PKGCONFIG/pango-cairo-wasm/build/lib/pkgconfig
-        source ./emsdk/emsdk_env.sh
         clear
 
     #FFmpeg
@@ -140,6 +162,13 @@ clear
         cp -r $working_dir/FFmpeg/build $working_dir/PKGCONFIG/FFmpeg/build
         FFmpeg_dir=$working_dir/PKGCONFIG/FFmpeg/build/lib/pkgconfig
         clear
-    
+        echo "Removing build directory for FFmpeg..."
+        sleep 4
+        sudo rm -r FFmpeg
+        clear
+
 #Setting PKG_CONFIG_PATH:
     PKG_CONFIG_PATH=$lzma_dir:$pango_cairo_wasm_dir:$FFmpeg_dir
+
+#Done Message:
+    echo "Dependencies: Done... Continue..."
