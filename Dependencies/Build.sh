@@ -68,7 +68,7 @@ echo $working_dir
             git clone https://github.com/notsilverhoft/pango-cairo-wasm.git > /dev/null 2>&1
             cd pango-cairo-wasm
             echo "Cloning Submodules... Please wait!"
-            git submodule update --init > /dev/null 2>&1
+            git submodule update --init
             clear
             cd $working_dir
             echo "PangoCairoPack: Done... Continue."
@@ -82,12 +82,15 @@ echo $working_dir
         else
             echo "FFmpeg: Not Found... Cloning."
             git clone https://github.com/FFmpeg/FFmpeg.git > /dev/null 2>&1
+            clear
+            cd $working_dir
             echo "FFmpeg: Done... Continue."
+
             
         fi
 
     #SDL2
-        if [ -d $working_dir/SDL2 ]; then
+        if [ -d $working_dir/SDL2-2.30.7 ]; then
             echo "SDL2: Found... Continue."
 
         else
@@ -95,6 +98,7 @@ echo $working_dir
             wget https://github.com/libsdl-org/SDL/releases/download/release-2.30.7/SDL2-2.30.7.zip > /dev/null 2>&1
             unzip SDL2-2.30.7.zip
             sudo rm SDL2-2.30.7.zip
+            cd $working_dir
             clear
             echo "SDL2: Done... Continue."
 
@@ -107,6 +111,7 @@ echo $working_dir
         else
             echo "RTMP: Not Found... Cloning."
             git clone https://github.com/notsilverhoft/rtmpdump.git > /dev/null 2>&1
+            cd $working_dir
             clear
             echo "RTMP: Done... Continue."
 
@@ -119,6 +124,7 @@ echo $working_dir
         else
             echo "OpenSSL: Not Found... Cloning."
             git clone https://github.com/openssl/openssl.git > /dev/null 2>&1
+            cd $working_dir
             clear
             echo "SDL2: Done... Continue."
 
@@ -165,7 +171,7 @@ echo $working_dir
         image=pangocairowasm
         container_id=$(docker create "$image")
         source_path=/magic/build
-        destination_path=$working_dir/PKGCONFIG/pango-cairo-wasm
+        destination_path=$working_dir/PKGCONFIG/pango-cairo-wasm/build
         clear
         sleep 2
         echo "Downloading from Docker..."
@@ -239,12 +245,11 @@ echo $working_dir
     #OpenSSL
         echo "Build: Target is OpenSSL..."
         cd openssl
-        emmake bash
-        ./Configure -no-asm -no-apps no-ssl2 no-ssl3 no-comp no-hw no-engine no-deprecated shared no-dso --openssldir=built linux-generic32 -pthread --cross-compile-prefix=/ --prefix=$working_dir/PKGCONFIG/OpenSSL/build
-        make 
+        emconfigure ./Configure -no-asm -no-apps no-ssl2 no-ssl3 no-comp no-hw no-engine no-deprecated shared no-dso --openssldir=built linux-generic32 -pthread --cross-compile-prefix=/ --prefix=$working_dir/PKGCONFIG/OpenSSL/build
+        emmake make 
         sudo make install
         cd $working_dir
-        OpenSSL_dir=$working_dir/PKGCONFIG/OpenSSL/build/lib
+        OpenSSL_dir=$working_dir/PKGCONFIG/OpenSSL/build/lib/pkgconfig
         clear
         echo "Removing build directory for OpenSSL..."
         sleep 4
