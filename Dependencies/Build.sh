@@ -85,8 +85,47 @@ echo $working_dir
             echo "FFmpeg: Done... Continue."
             
         fi
+
+    #SDL2
+        if [ -d $working_dir/SDL2 ]; then
+            echo "SDL2: Found... Continue."
+
+        else
+            echo "SDL2: Not Found... Cloning."
+            wget https://github.com/libsdl-org/SDL/releases/download/release-2.30.7/SDL2-2.30.7.zip > /dev/null 2>&1
+            unzip SDL2-2.30.7.zip
+            sudo rm SDL2-2.30.7.zip
+            clear
+            echo "SDL2: Done... Continue."
+
+        fi
+
+    #rtmpdump
+        if [ -d $working_dir/rtmpdump ]; then
+            echo "RTMP: Found... Continue."
         
-clear
+        else
+            echo "RTMP: Not Found... Cloning."
+            git clone https://github.com/notsilverhoft/rtmpdump.git > /dev/null 2>&1
+            clear
+            echo "RTMP: Done... Continue."
+
+        fi
+        
+    #OpenSSL
+        if [ -d $working_dir/openssl ]; then
+            echo "RTMP: Found... Continue."
+
+        else
+            echo "OpenSSL: Not Found... Cloning."
+            git clone https://github.com/openssl/openssl.git > /dev/null 2>&1
+            clear
+            echo "SDL2: Done... Continue."
+
+        fi            
+
+
+    clear
         
         
 #Building:
@@ -125,8 +164,8 @@ clear
         echo "Setting variables..."
         image=pangocairowasm
         container_id=$(docker create "$image")
-        source_path=/magic
-        destination_path=$working_dir/pango-cairo-wasm
+        source_path=/magic/build
+        destination_path=$working_dir/PKGCONFIG/pango-cairo-wasm
         clear
         sleep 2
         echo "Downloading from Docker..."
@@ -143,7 +182,6 @@ clear
         cd $working_dir/PKGCONFIG
         mkdir pango-cairo-wasm
         cd $working_dir
-        cp -r $working_dir/pango-cairo-wasm/build $working_dir/PKGCONFIG/pango-cairo-wasm/build
         pango_cairo_wasm_dir=$working_dir/PKGCONFIG/pango-cairo-wasm/build/lib/pkgconfig
         clear
         echo "Removing build directory for PangoCairoPack"
@@ -157,13 +195,12 @@ clear
         emconfigure ./configure --disable-x86asm --disable-inline-asm --disable-doc --disable-stripping \
         --nm="$working_dir/emsdk/upstream/bin/llvm-nm -g" \
         --ar=emar --cc=emcc --cxx=em++ --objcc=emcc --dep-cc=emcc\
-        --prefix=$working_dir/FFmpeg/build --extra-ldflags='-s TOTAL_MEMORY=33554432'
+        --prefix=$working_dir/PKGCONFIG/FFmpeg/build --extra-ldflags='-s TOTAL_MEMORY=33554432'
         emmake make CFLAGS='-pthread -sUSE_SDL=2 -s' CXXFLAGS='-pthread -sUSE_SDL=2'
         emmake make install
         cd $working_dir/PKGCONFIG
         mkdir FFmpeg
         cd $working_dir
-        cp -r $working_dir/FFmpeg/build $working_dir/PKGCONFIG/FFmpeg/build
         FFmpeg_dir=$working_dir/PKGCONFIG/FFmpeg/build/lib/pkgconfig
         clear
         echo "Removing build directory for FFmpeg..."
@@ -171,8 +208,53 @@ clear
         sudo rm -r FFmpeg
         clear
 
-#Setting PKG_CONFIG_PATH:
-    PKG_CONFIG_PATH=$lzma_dir:$pango_cairo_wasm_dir:$FFmpeg_dir
+    #SDL2
+        echo "Build: Target is SDL2..."
+        cd SDL2-2.30.7
+        emconfigure ./configure --host=wasm32-unknown-emscripten --enable-pthreads --disable-assembly --disable-cpuinfo CFLAGS="-sUSE_SDL=0 -O3 -pthread" LDFLAGS="-pthread" --prefix=$working_dir/PKGCONFIG/SDL2/build
+        emmake make -j4 
+        make install
+        cd $working_dir
+        SDL2_dir=$working_dir/PKGCONFIG/SDL2/build/lib/pkgconfig
+        clear
+        echo "Removing build directory for SDL2..."
+        sleep 4
+        sudo rm -r SDL2-2.30.7
+        clear
 
+    #rtmpdump
+        echo "Build: Target is RTMP..."
+        cd rtmpdump
+        make clean
+        emmake make CRYPTO=
+        make install DESTDIR=$working_dir/PKGCONFIG/rtmpdump/build
+        cd $working_dir
+        RTMP_dir=$working_dir/PKGCONFIG/rtmpdump/build/lib/pkgconfig
+        clear
+        echo "Removing build directory for SDL2..."
+        sleep 4
+        sudo rm -r rtmpdump
+        clear
+
+    #OpenSSL
+        echo "Build: Target is OpenSSL..."
+        cd openssl
+        emmake bash
+        ./Configure -no-asm -no-apps no-ssl2 no-ssl3 no-comp no-hw no-engine no-deprecated shared no-dso --openssldir=built linux-generic32 -pthread --cross-compile-prefix=/ --prefix=$working_dir/PKGCONFIG/OpenSSL/build
+        make 
+        sudo make install
+        cd $working_dir
+        OpenSSL_dir=$working_dir/PKGCONFIG/OpenSSL/build/lib
+        clear
+        echo "Removing build directory for OpenSSL..."
+        sleep 4
+        sudo rm -r openssl
+        clear
+
+
+
+
+#Setting PKG_CONFIG_PATH:
+    export PKG_CONFIG_PATH=$lzma_dir:$pango_cairo_wasm_dir:$FFmpeg_dir:$SDL2_dir:$RTMP_dir:$OpenSSL_dir
 #Done Message:
     echo "Dependencies: Done... Continue..."
