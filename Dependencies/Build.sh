@@ -45,6 +45,7 @@ echo $working_dir
             embuilder build ALL
             echo "Emsdk: Ports Installed... Done... Continue."
             cd $working_dir
+            clear
 
         fi
 
@@ -83,7 +84,6 @@ echo $working_dir
             echo "FFmpeg: Not Found... Cloning."
             git clone https://github.com/FFmpeg/FFmpeg.git > /dev/null 2>&1
             clear
-            cd $working_dir
             echo "FFmpeg: Done... Continue."
 
             
@@ -98,7 +98,6 @@ echo $working_dir
             wget https://github.com/libsdl-org/SDL/releases/download/release-2.30.7/SDL2-2.30.7.zip > /dev/null 2>&1
             unzip SDL2-2.30.7.zip
             sudo rm SDL2-2.30.7.zip
-            cd $working_dir
             clear
             echo "SDL2: Done... Continue."
 
@@ -111,7 +110,6 @@ echo $working_dir
         else
             echo "RTMP: Not Found... Cloning."
             git clone https://github.com/notsilverhoft/rtmpdump.git > /dev/null 2>&1
-            cd $working_dir
             clear
             echo "RTMP: Done... Continue."
 
@@ -124,13 +122,12 @@ echo $working_dir
         else
             echo "OpenSSL: Not Found... Cloning."
             git clone https://github.com/openssl/openssl.git > /dev/null 2>&1
-            cd $working_dir
             clear
             echo "SDL2: Done... Continue."
 
-        fi            
+        fi           
 
-
+   
     clear
         
         
@@ -256,9 +253,8 @@ echo $working_dir
         sudo rm -r openssl
         clear
 
-
-
-
+    clear
+    
 #Setting PKG_CONFIG_PATH:
     export PKG_CONFIG_PATH=$lzma_dir:$pango_cairo_wasm_dir:$FFmpeg_dir:$SDL2_dir:$RTMP_dir:$OpenSSL_dir
 #Done Message:
