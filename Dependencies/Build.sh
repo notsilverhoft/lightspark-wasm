@@ -146,7 +146,7 @@ echo $working_dir
         mkdir lzma
         cd $working_dir
         cp -r $working_dir/liblzma/build $working_dir/PKGCONFIG/lzma/build
-        lzma_dir=$working_dir/PKGCONFIG/lzma/build/lib/pkgconfig
+        export lzma_dir=$working_dir/PKGCONFIG/lzma/build/lib/pkgconfig
         clear
         echo "Removing build directory for Lzma..."
         sleep 4
@@ -185,7 +185,7 @@ echo $working_dir
         cd $working_dir/PKGCONFIG
         mkdir pango-cairo-wasm
         cd $working_dir
-        pango_cairo_wasm_dir=$working_dir/PKGCONFIG/pango-cairo-wasm/build/lib/pkgconfig
+        export pango_cairo_wasm_dir=$working_dir/PKGCONFIG/pango-cairo-wasm/build/lib/pkgconfig
         clear
         echo "Removing build directory for PangoCairoPack"
         sleep 4
@@ -204,7 +204,7 @@ echo $working_dir
         cd $working_dir/PKGCONFIG
         mkdir FFmpeg
         cd $working_dir
-        FFmpeg_dir=$working_dir/PKGCONFIG/FFmpeg/build/lib/pkgconfig
+        export FFmpeg_dir=$working_dir/PKGCONFIG/FFmpeg/build/lib/pkgconfig
         clear
         echo "Removing build directory for FFmpeg..."
         sleep 4
@@ -218,7 +218,7 @@ echo $working_dir
         emmake make -j4 
         make install
         cd $working_dir
-        SDL2_dir=$working_dir/PKGCONFIG/SDL2/build/lib/pkgconfig
+        export SDL2_dir=$working_dir/PKGCONFIG/SDL2/build/lib/pkgconfig
         clear
         echo "Removing build directory for SDL2..."
         sleep 4
@@ -232,7 +232,7 @@ echo $working_dir
         emmake make CRYPTO=
         make install DESTDIR=$working_dir/PKGCONFIG/rtmpdump/build
         cd $working_dir
-        RTMP_dir=$working_dir/PKGCONFIG/rtmpdump/build/lib/pkgconfig
+        export RTMP_dir=$working_dir/PKGCONFIG/rtmpdump/build/lib/pkgconfig
         clear
         echo "Removing build directory for SDL2..."
         sleep 4
@@ -246,7 +246,7 @@ echo $working_dir
         emmake make 
         sudo make install
         cd $working_dir
-        OpenSSL_dir=$working_dir/PKGCONFIG/OpenSSL/build/lib/pkgconfig
+        export OpenSSL_dir=$working_dir/PKGCONFIG/OpenSSL/build/lib/pkgconfig
         clear
         echo "Removing build directory for OpenSSL..."
         sleep 4
