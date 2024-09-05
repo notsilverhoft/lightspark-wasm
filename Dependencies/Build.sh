@@ -22,7 +22,7 @@ pip3 install meson==1.4.0
 
 #Setting working directory:
 mkdir PKGCONFIG
-working_dir=$(pwd)
+export working_dir=$(pwd)
 echo $working_dir
 #Cloning:
 
@@ -70,6 +70,7 @@ echo $working_dir
             cd pango-cairo-wasm
             echo "Cloning Submodules... Please wait!"
             git submodule update --init
+            sleep 6
             clear
             cd $working_dir
             echo "PangoCairoPack: Done... Continue."
@@ -158,7 +159,7 @@ echo $working_dir
         sleep 4
         cd pango-cairo-wasm
         sudo dockerd > /dev/null 2>&1
-        sudo docker build --progress=plain --no-cache -t 'pangocairowasm' .
+        sudo docker build --progress=plain -t 'pangocairowasm' .
         sleep 6
         clear
         echo "Removing pangocairowasm dir..."
@@ -168,12 +169,15 @@ echo $working_dir
         image=pangocairowasm
         container_id=$(docker create "$image")
         source_path=/magic/build
+        cd $working_dir/PKGCONFIG
+        mkdir pango-cairo-wasm
+        cd $working_dir
         destination_path=$working_dir/PKGCONFIG/pango-cairo-wasm/build
         clear
         sleep 2
         echo "Downloading from Docker..."
         sleep 4
-        docker cp "$container_id:$source_path" "$destination_path"
+        sudo docker cp "$container_id:$source_path" "$destination_path"
         clear
         echo "Cleaning up..."
         docker rm "$container_id"
@@ -182,14 +186,13 @@ echo $working_dir
         sleep 2
         clear
         echo "Setting up env variables..."
-        cd $working_dir/PKGCONFIG
-        mkdir pango-cairo-wasm
         cd $working_dir
         export pango_cairo_wasm_dir=$working_dir/PKGCONFIG/pango-cairo-wasm/build/lib/pkgconfig
         clear
         echo "Removing build directory for PangoCairoPack"
         sleep 4
         sudo rm -r pango-cairo-wasm
+        docker 
         clear
 
     #FFmpeg

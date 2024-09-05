@@ -49,8 +49,10 @@
 	#include <io.h> //for close(), unlink()
 #endif
 
-
-#include <glib.h>
+#ifdef __EMSCRIPTEN__
+	#include "../Dependencies/PKGCONFIG/pango-cairo-wasm/build/include/glib-2.0/glib.h"
+#else
+	#include <glib.h>
 #include <cstdlib>
 
 
