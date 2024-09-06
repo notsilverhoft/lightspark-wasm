@@ -31,7 +31,7 @@
 #error "Only <glib.h> can be included directly."
 #endif
 
-#include <gtypes.h>
+#include "gtypes.h"
 #include <string.h>
 
 #if defined(__BIONIC__) && defined (GLIB_HAVE_ALLOCA_H)

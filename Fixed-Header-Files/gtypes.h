@@ -32,11 +32,11 @@
 #endif
 
 #include "../../../lib/glib-2.0/include/glibconfig.h"
-#include <glib/gmacros.h>
-#include <glib/gversionmacros.h>
+#include "gmacros.h"
+#include "gversionmacros.h"
 
 /* Must be included after the 3 headers above */
-#include <glib/glib-visibility.h>
+#include "glib-visibility.h"
 
 #include <time.h>
 
