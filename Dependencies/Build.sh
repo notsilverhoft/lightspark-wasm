@@ -7,7 +7,7 @@
 sudo apt update
 sudo apt upgrade automake -y
 sudo apt install python3-pip -y
-sudo apt install m4
+sudo apt install m4 -y
 python3 -m pip install --upgrade pip
 pip3 install meson==1.4.0
 
