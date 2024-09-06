@@ -16,7 +16,8 @@ This is my current checklist(Also a work in progress... lol):
   - [X] Glib
   - [X] SDL2
   - [ ] Curl
-  - [ ] Librtmp
+    - [ ] Find replacement for Curl
+  - [X] Librtmp
 
 
 Lightspark
