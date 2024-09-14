@@ -26,7 +26,12 @@
 #include <map>
 #include <stack>
 #include <list>
-#include <cairo.h>
+
+#ifdef __EMSCRIPTEN__
+	#include "../Dependencies/PKGCONFIG/pango-cairo-wasm/build/include/cairo/cairo.h"
+#else
+	#include <cairo.h>
+#endif
 
 #include "forwards/swftypes.h"
 #include "forwards/scripting/flash/display/DisplayObject.h"
