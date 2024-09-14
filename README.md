@@ -18,7 +18,8 @@ This is my current checklist(Also a work in progress... lol):
   - [ ] Curl
     - [ ] Find replacement for Curl
   - [X] Librtmp
-
+- [ ] Header issues:
+  - [ ] Glib
 
 Lightspark
 ==========
