@@ -24,7 +24,13 @@
 #include "tiny_string.h"
 #include "asobject.h"
 #include "threading.h"
-#include <glib.h>
+
+#ifdef __EMSCRIPTEN__
+	#include "../../../../Dependencies/PKGCONFIG/pango-cairo-wasm/build/include/glib-2.0/glib.h"
+#else
+	#include <glib.h>
+#endif
+
 #include "Socket.h"
 
 namespace lightspark
