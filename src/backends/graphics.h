@@ -33,8 +33,15 @@
 #include <vector>
 #include "smartrefs.h"
 #include "swftypes.h"
-#include <cairo.h>
-#include <pango/pango.h>
+
+#ifdef __EMSCRIPTEN__
+	#include "../../Dependencies/PKGCONFIG/pango-cairo-wasm/build/include/cairo/cairo.h"
+	#include "../../Dependencies/PKGCONFIG/pango-cairo-wasm/build/include/pango-1.0/pango/pango.h"
+#else
+	#include <cairo.h>
+	#include <pango/pango.h>
+#endif
+
 #include "backends/geometry.h"
 #include "memory_support.h"
 

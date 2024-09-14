@@ -26,7 +26,12 @@
 #include "smartrefs.h"
 #include "swftypes.h"
 #include <vector>
-#include <cairo.h>
+
+#ifdef __EMSCRIPTEN__
+	#include "../../../Dependencies/PKGCONFIG/pango-cairo-wasm/build/include/cairo/cairo.h"
+#else
+	#include <cairo.h>
+#endif
 
 namespace lightspark
 {
