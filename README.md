@@ -20,7 +20,8 @@ This is my current checklist(Also a work in progress... lol):
   - [X] Librtmp
 - [ ] Header issues:
   - [X] Glib
-  - [ ] Pango
+  - [X] Pango
+  - [ ] Lightspark
 
 Lightspark
 ==========
