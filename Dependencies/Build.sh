@@ -237,7 +237,7 @@ echo $working_dir
         cd $working_dir
         export RTMP_dir=$working_dir/PKGCONFIG/rtmpdump/build/lib/pkgconfig
         clear
-        echo "Removing build directory for SDL2..."
+        echo "Removing build directory for RTMP..."
         sleep 4
         sudo rm -r rtmpdump
         clear
