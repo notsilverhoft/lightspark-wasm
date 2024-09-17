@@ -139,3 +139,4 @@ fix_dir=$(pwd)
         sudo cp $fix_dir/pango/pango-markup.h $working_dir/PKGCONFIG/pango-cairo-wasm/build/include/pango-1.0/pango/pango-markup.h
         sudo cp $fix_dir/pango/pango-renderer.h $working_dir/PKGCONFIG/pango-cairo-wasm/build/include/pango-1.0/pango/pango-renderer.h
         sudo cp $fix_dir/pango/pango-utils.h $working_dir/PKGCONFIG/pango-cairo-wasm/build/include/pango-1.0/pango/pango-utils.h
+        sudo cp $fix_dir/pango/pangocairo.h $working_dir/PKGCONFIG/pango-cairo-wasm/build/include/pango-1.0/pango/pangocairo.h

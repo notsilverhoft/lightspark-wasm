@@ -24,7 +24,13 @@
 #include "scripting/flash/display/RootMovieClip.h"
 
 #ifdef ENABLE_RTMP
-#include <librtmp/rtmp.h>
+
+	#ifdef __EMSCRIPTEN__
+		#include "../../Dependencies/PKGCONFIG/rtmpdump/build/include/librtmp/rtmp.h"
+	#else
+		#include <librtmp/rtmp.h>
+	#endif
+
 #endif
 
 using namespace lightspark;

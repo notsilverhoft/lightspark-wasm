@@ -34,7 +34,13 @@
 #include "scripting/flash/display/BitmapData.h"
 #include "scripting/flash/display/RootMovieClip.h"
 #include "parsing/tags.h"
-#include <pango/pangocairo.h>
+
+#ifdef __EMSCRIPTEN__
+	#include "../../Dependencies/PKGCONFIG/pango-cairo-wasm/build/include/pango-1.0/pango/pangocairo.h"
+#else
+	#include <pango/pangocairo.h>
+#endif
+
 
 using namespace lightspark;
 
