@@ -6,7 +6,13 @@
 #include "scripting/flash/net/flashnet.h"
 #include "scripting/flash/display3d/flashdisplay3d.h"
 #include "abc.h"
-#include <lzma.h>
+
+#ifdef __EMSCRIPTEN__
+	#include "../../../../Dependencies/PKGCONFIG/lzma/build/include/lzma.h"
+#else
+	#include <lzma.h>
+#endif
+
 #include "3rdparty/jpegxr/jpegxr.h" // jpeg-xr decoding library taken from https://github.com/adobe/dds2atf/
 
 using namespace lightspark;

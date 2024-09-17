@@ -25,8 +25,15 @@
 #include <string.h>
 #include <stdlib.h>
 #include <cmath>
-#include <cairo.h>
-#include <glib.h>
+
+#ifdef __EMSCRIPTEN__
+	#include "../Dependencies/PKGCONFIG/pango-cairo-wasm/build/include/cairo/cairo.h"
+	#include "../Dependencies/PKGCONFIG/pango-cairo-wasm/build/include/glib-2.0/glib.h"
+#else
+	#include <cairo.h>
+	#include <glib.h>
+#endif
+
 #include <iomanip>
 #include <algorithm>
 

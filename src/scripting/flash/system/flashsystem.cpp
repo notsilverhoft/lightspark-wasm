@@ -962,12 +962,6 @@ ASFUNCTIONBODY_ATOM(System,totalMemory)
 	char* buf=nullptr;
 	size_t size=0;
 	FILE* f = open_memstream(&buf, &size);
-	if (!f || malloc_info(0,f)!=0)
-	{
-		LOG(LOG_ERROR,"System.totalMemory failed");
-		asAtomHandler::setUInt(ret,wrk,1024);
-		return;
-	}
 	fclose(f);
 	
 	uint32_t memsize = 0;

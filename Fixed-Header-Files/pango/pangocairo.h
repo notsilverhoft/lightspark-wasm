@@ -22,8 +22,8 @@
 #ifndef __PANGOCAIRO_H__
 #define __PANGOCAIRO_H__
 
-#include <pango/pango.h>
-#include <cairo.h>
+#include "pango.h"
+#include "../../cairo/cairo.h"
 
 G_BEGIN_DECLS
 

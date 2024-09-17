@@ -27,7 +27,13 @@
 #include <fstream>
 #include <cinttypes>
 #include <zlib.h>
-#include <lzma.h>
+
+#ifdef __EMSCRIPTEN__
+	#include "../../Dependencies/PKGCONFIG/lzma/build/include/lzma.h"
+#else
+	#include <lzma.h>
+#endif
+
 
 class uncompressing_filter: public std::streambuf
 {
