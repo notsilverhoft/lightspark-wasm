@@ -35,11 +35,12 @@
 
 #ifdef __EMSCRIPTEN__
 	#include "../../../../Dependencies/PKGCONFIG/pango-cairo-wasm/build/include/glib-2.0/glib.h"
+	#include "../../../../Dependencies/PKGCONFIG/lzma/build/include/lzma.h"
 #else
 	#include <glib.h>
+	#include <lzma.h>
 #endif
 
-#include <lzma.h>
 
 using namespace std;
 using namespace lightspark;

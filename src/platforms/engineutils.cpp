@@ -24,7 +24,13 @@
 #include "backends/rendering.h"
 #include "backends/lsopengl.h"
 #include "backends/audio.h"
-#include <pango/pangocairo.h>
+
+#ifdef __EMSCRIPTEN__
+	#include "../../Dependencies/PKGCONFIG/pango-cairo-wasm/build/include/pango-1.0/pango/pangocairo.h"
+#else
+	#include <pango/pangocairo.h>
+#endif
+
 #include "version.h"
 #include "abc.h"
 #include "class.h"
@@ -35,7 +41,13 @@
 #include "flash/utils/ByteArray.h"
 #include "flash/geom/flashgeom.h"
 #include "launcher.h"
-#include <glib/gstdio.h>
+
+#ifdef __EMSCRIPTEN__
+	#include "../Dependencies/PKGCONFIG/pango-cairo-wasm/build/include/glib-2.0/glib/gstdio.h"
+#else
+	#include <glib/gstdio.h>
+#endif
+
 #include <fcntl.h>
 #include <sys/types.h>
 #include <sys/stat.h>

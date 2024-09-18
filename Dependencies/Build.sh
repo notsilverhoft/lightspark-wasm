@@ -261,4 +261,7 @@ echo $working_dir
 #Setting PKG_CONFIG_PATH:
     export PKG_CONFIG_PATH=$lzma_dir:$pango_cairo_wasm_dir:$FFmpeg_dir:$SDL2_dir:$RTMP_dir:$OpenSSL_dir
 #Done Message:
+    emcc --clear-cache
+    sudo apt-get clean
+    sudo du -sh /var/cache/apt/archives
     echo "Dependencies: Done... Continue..."

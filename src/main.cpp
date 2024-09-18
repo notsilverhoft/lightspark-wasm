@@ -17,7 +17,12 @@
     along with this program.  If not, see <http://www.gnu.org/licenses/>.
 **************************************************************************/
 
-#include <glib.h>
+#ifdef __EMSCRIPTEN__
+	#include "../Dependencies/PKGCONFIG/pango-cairo-wasm/build/include/glib-2.0/glib.h"
+#else
+	#include <glib.h>
+#endif
+
 #include "version.h"
 #include "backends/security.h"
 #include "backends/config.h"

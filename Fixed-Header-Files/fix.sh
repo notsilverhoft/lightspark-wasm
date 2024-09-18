@@ -109,6 +109,8 @@ fix_dir=$(pwd)
         sudo cp $fix_dir/glib/gtypeplugin.h $working_dir/PKGCONFIG/pango-cairo-wasm/build/include/glib-2.0/gobject/gtypeplugin.h
         sudo cp $fix_dir/glib/gvaluearray.h $working_dir/PKGCONFIG/pango-cairo-wasm/build/include/glib-2.0/gobject/gvaluearray.h
         sudo cp $fix_dir/glib/gvaluetypes.h $working_dir/PKGCONFIG/pango-cairo-wasm/build/include/glib-2.0/gobject/gvaluetypes.h
+        sudo cp $fix_dir/glib/gstdio.h $working_dir/PKGCONFIG/pango-cairo-wasm/build/include/glib-2.0/glib/gstdio.h
+        sudo cp $fix_dir/glib/gprintf.h $working_dir/PKGCONFIG/pango-cairo-wasm/build/include/glib-2.0/glib/gprintf.h
 
     #Pango:
         sudo cp $fix_dir/pango/pango.h $working_dir/PKGCONFIG/pango-cairo-wasm/build/include/pango-1.0/pango/pango.h

@@ -28,7 +28,12 @@
 #include "scripting/flash/errors/flasherrors.h"
 #include <sstream>
 #include <zlib.h>
-#include <glib.h>
+
+#ifdef __EMSCRIPTEN__
+	#include "../../../../Dependencies/PKGCONFIG/pango-cairo-wasm/build/include/glib-2.0/glib.h"
+#else
+	#include <glib.h>
+#endif
 
 using namespace std;
 using namespace lightspark;
