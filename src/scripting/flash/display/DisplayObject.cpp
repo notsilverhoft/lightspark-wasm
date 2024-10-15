@@ -314,6 +314,8 @@ void DisplayObject::prepareShutdown()
 
 bool DisplayObject::countCylicMemberReferences(garbagecollectorstate& gcstate)
 {
+	if (this->isOnStage() && !getSystemState()->isShuttingDown())
+		return false; // no need to count, as we have at least one reference left if this object is still on stage
 	if (gcstate.checkAncestors(this))
 		return false;
 	bool ret = EventDispatcher::countCylicMemberReferences(gcstate);
@@ -771,14 +773,14 @@ void DisplayObject::setLegacyMatrix(const lightspark::MATRIX& m)
 
 void DisplayObject::setFilters(const FILTERLIST& filterlist)
 {
-	if (filterlist.Filters.size())
+	if (filterlist.NumberOfFilters)
 	{
 		if (filters.isNull())
 			filters = _MR(Class<Array>::getInstanceS(getInstanceWorker()));
 		else
 		{
 			// check if filterlist has really changed
-			if (!filterlistHasChanged && filters->size() == filterlist.Filters.size())
+			if (!filterlistHasChanged && filters->size() == filterlist.NumberOfFilters)
 			{
 				for (uint32_t i =0; i < filters->size(); i++)
 				{
@@ -788,7 +790,7 @@ void DisplayObject::setFilters(const FILTERLIST& filterlist)
 						filterlistHasChanged=true;
 						break;
 					}
-					if (!asAtomHandler::as<BitmapFilter>(f)->compareFILTER(filterlist.Filters.at(i)))
+					if (!asAtomHandler::as<BitmapFilter>(f)->compareFILTER(filterlist.Filters[i]))
 					{
 						filterlistHasChanged=true;
 						break;
@@ -801,38 +803,39 @@ void DisplayObject::setFilters(const FILTERLIST& filterlist)
 		filterlistHasChanged=true;
 		maxfilterborder=0;
 		filters->resize(0);
-		auto it = filterlist.Filters.cbegin();
-		while (it != filterlist.Filters.cend())
+		uint8_t n = filterlist.NumberOfFilters;
+		for (uint8_t i=0; i < n; i++)
 		{
+			FILTER* flt = &filterlist.Filters[i];
 			BitmapFilter* f = nullptr;
-			switch(it->FilterID)
+			switch(flt->FilterID)
 			{
 				case FILTER::FILTER_DROPSHADOW:
-					f=Class<DropShadowFilter>::getInstanceS(getInstanceWorker(),it->DropShadowFilter);
+					f=Class<DropShadowFilter>::getInstanceS(getInstanceWorker(),flt->DropShadowFilter);
 					break;
 				case FILTER::FILTER_BLUR:
-					f=Class<BlurFilter>::getInstanceS(getInstanceWorker(),it->BlurFilter);
+					f=Class<BlurFilter>::getInstanceS(getInstanceWorker(),flt->BlurFilter);
 					break;
 				case FILTER::FILTER_GLOW:
-					f=Class<GlowFilter>::getInstanceS(getInstanceWorker(),it->GlowFilter);
+					f=Class<GlowFilter>::getInstanceS(getInstanceWorker(),flt->GlowFilter);
 					break;
 				case FILTER::FILTER_BEVEL:
-					f=Class<BevelFilter>::getInstanceS(getInstanceWorker(),it->BevelFilter);
+					f=Class<BevelFilter>::getInstanceS(getInstanceWorker(),flt->BevelFilter);
 					break;
 				case FILTER::FILTER_GRADIENTGLOW:
-					f=Class<GradientGlowFilter>::getInstanceS(getInstanceWorker(),it->GradientGlowFilter);
+					f=Class<GradientGlowFilter>::getInstanceS(getInstanceWorker(),flt->GradientGlowFilter);
 					break;
 				case FILTER::FILTER_CONVOLUTION:
-					f=Class<ConvolutionFilter>::getInstanceS(getInstanceWorker(),it->ConvolutionFilter);
+					f=Class<ConvolutionFilter>::getInstanceS(getInstanceWorker(),flt->ConvolutionFilter);
 					break;
 				case FILTER::FILTER_COLORMATRIX:
-					f=Class<ColorMatrixFilter>::getInstanceS(getInstanceWorker(),it->ColorMatrixFilter);
+					f=Class<ColorMatrixFilter>::getInstanceS(getInstanceWorker(),flt->ColorMatrixFilter);
 					break;
 				case FILTER::FILTER_GRADIENTBEVEL:
-					f=Class<GradientBevelFilter>::getInstanceS(getInstanceWorker(),it->GradientBevelFilter);
+					f=Class<GradientBevelFilter>::getInstanceS(getInstanceWorker(),flt->GradientBevelFilter);
 					break;
 				default:
-					LOG(LOG_ERROR,"Unsupported Filter Id " << (int)it->FilterID);
+					LOG(LOG_ERROR,"Unsupported Filter Id " << (int)flt->FilterID);
 					break;
 			}
 			if (f)
@@ -840,7 +843,6 @@ void DisplayObject::setFilters(const FILTERLIST& filterlist)
 				filters->push(asAtomHandler::fromObject(f));
 				maxfilterborder = max(maxfilterborder,f->getMaxFilterBorder());
 			}
-			it++;
 		}
 		hasChanged=true;
 		setNeedsTextureRecalculation();
@@ -937,7 +939,8 @@ void DisplayObject::setMask(_NR<DisplayObject> m)
 	{
 		//Remove previous mask
 		mask->ismask=false;
-		mask->maskee->removeStoredMember();
+		if (mask->maskee)
+			mask->maskee->removeStoredMember();
 		mask->maskee=nullptr;
 		mask->removeStoredMember();
 		mask=nullptr;
@@ -1803,12 +1806,16 @@ void DisplayObject::setParent(DisplayObjectContainer *p)
 	Locker locker(spinlock);
 	if(parent!=p)
 	{
+		if (parent)
+			parent->removeStoredMember();
 		if (p)
 		{
 			// mark old parent as dirty
 			geometryChanged();
 			getSystemState()->removeFromResetParentList(this);
 			getSystemState()->stage->removeHiddenObject(this);
+			p->incRef();
+			p->addStoredMember();
 		}
 		parent=p;
 		hasChanged=true;
@@ -2156,6 +2163,8 @@ string DisplayObject::toDebugString() const
 	char buf[100];
 	sprintf(buf,"%u pa=%p",getTagID(),getParent());
 	res += buf;
+	if (onStage)
+		res += " onstage";
 	return res;
 }
 IDrawable* DisplayObject::getFilterDrawable(bool smoothing)
